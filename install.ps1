@@ -1,7 +1,7 @@
 # Wisp installer for Windows 10/11.
 #
 # One-line install (PowerShell):
-#   irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/YOUR-GITHUB-USERNAME/wisp/main/install.ps1 | iex
 #
 # Or, from an unzipped download: double-click setup.bat (which runs this with -Local).
 #
@@ -11,10 +11,28 @@
 param([switch]$Local)
 
 $ErrorActionPreference = "Stop"
-$Repo = "LucasTao638/Wisp"
+$Repo = "YOUR-GITHUB-USERNAME/wisp"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Wisp"
 
 function Say($text, $colour = "Cyan") { Write-Host $text -ForegroundColor $colour }
+# Run an outside program (pip, uv, winget...). Many of them print progress on the error channel, which
+# Windows PowerShell would otherwise treat as a failure. Judge them by their exit code instead.
+function Run-Tool([string]$What, [scriptblock]$Command, [switch]$Quiet, [switch]$AllowFail) {
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $code = 1
+    try {
+        if ($Quiet) { & $Command 2>&1 | Out-Null } else { & $Command 2>&1 | ForEach-Object { Write-Host "$_" } }
+        $code = $LASTEXITCODE
+    } catch {
+        Write-Host "$_"
+    } finally {
+        $ErrorActionPreference = $old
+    }
+    if ($code -ne 0 -and -not $AllowFail) { throw "$What failed (exit code $code). See the messages above." }
+    return ($code -eq 0)
+}
+
 function Refresh-Path {
     $env:Path = [Environment]::GetEnvironmentVariable("Path", "User") + ";" + [Environment]::GetEnvironmentVariable("Path", "Machine")
     $extra = @("$env:USERPROFILE\.local\bin", "$env:LOCALAPPDATA\Python\bin", "$env:LOCALAPPDATA\Programs\Python\Launcher")
@@ -42,7 +60,7 @@ if ($Local) {
     if (-not (Test-Path (Join-Path $source.FullName "core.py"))) { $source = Get-Item $unpacked }
     if (Test-Path (Join-Path $InstallDir "core.py")) {
         Say "Wisp is already installed - updating it (your settings and memory are kept)."
-        & py -V:3.13 (Join-Path $InstallDir "updater.py") $zip
+        Run-Tool "Updating Wisp" { py -V:3.13 (Join-Path $InstallDir "updater.py") $zip } | Out-Null
     } else {
         New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
         Copy-Item (Join-Path $source.FullName "*") $InstallDir -Recurse -Force
@@ -53,21 +71,20 @@ if ($Local) {
 # ---------- 2. Python 3.13 ----------
 Say "[2/5] Checking Python 3.13..."
 Refresh-Path
-$hasPy = $false
-try { & py -V:3.13 --version 2>$null | Out-Null; if ($LASTEXITCODE -eq 0) { $hasPy = $true } } catch {}
+$hasPy = (Get-Command py -ErrorAction SilentlyContinue) -and (Run-Tool "Python check" { py -V:3.13 --version } -Quiet -AllowFail)
 if (-not $hasPy) {
     Say "Installing Python 3.13 (this can take a minute)..."
-    winget install -e --id Python.Python.3.13 --scope user --silent --accept-package-agreements --accept-source-agreements
+    Run-Tool "Installing Python" { winget install -e --id Python.Python.3.13 --scope user --silent --accept-package-agreements --accept-source-agreements } -AllowFail | Out-Null
     Refresh-Path
-    & py -V:3.13 --version
-    if ($LASTEXITCODE -ne 0) { throw "Python 3.13 didn't install. Install it from python.org, then run this again." }
+    if (-not (Run-Tool "Python check" { py -V:3.13 --version } -Quiet -AllowFail)) {
+        throw "Python 3.13 didn't install. Install it from python.org, then run this again."
+    }
 }
 
 # ---------- 3. Python packages ----------
 Say "[3/5] Installing Wisp's packages (voice, hotkeys, tray)..."
-& py -V:3.13 -m pip install --upgrade --quiet pip
-& py -V:3.13 -m pip install --quiet -r (Join-Path $InstallDir "requirements.txt")
-if ($LASTEXITCODE -ne 0) { throw "Package install failed. See the messages above." }
+Run-Tool "Updating pip" { py -V:3.13 -m pip install --upgrade --quiet --disable-pip-version-check pip } -AllowFail | Out-Null
+Run-Tool "Installing Wisp's packages" { py -V:3.13 -m pip install --quiet --disable-pip-version-check -r (Join-Path $InstallDir "requirements.txt") } | Out-Null
 
 # ---------- 4. uv + Windows-MCP (app control) ----------
 Say "[4/5] Installing app control (Windows-MCP)..."
@@ -76,7 +93,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
     Refresh-Path
 }
-& uv tool install windows-mcp --python 3.13 --force 2>$null | Out-Null
+Run-Tool "Installing Windows-MCP (app control)" { uv tool install windows-mcp --python 3.13 --force } -Quiet | Out-Null
 
 # ---------- 5. Claude Code ----------
 Say "[5/5] Installing Claude Code (Wisp's brain)..."

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0
+- **Fixed the grey orb with no text.** In the orb and the full-screen HUD, the letter `t` meant both "the current time" and "translate this text". The orb crashed while showing "Starting" and froze grey with no words, and the full-screen view had the same problem in two places. They now use separate names, and status and hint text show correctly in English and Chinese.
+- Windows installer: more reliable handling of pip/winget/Python messages, so harmless progress output is no longer treated as a failure.
+
 ## 0.0.1 (first public release)
 - Windows 10/11, plus a **Mac version (beta)** for macOS 12+ (Apple Silicon and Intel)
 - Voice assistant for Windows powered by Claude: wake phrase, push-to-talk, natural voices, follow-up listening

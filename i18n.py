@@ -26,10 +26,10 @@ def is_zh():
     return LANG == "zh"
 
 
-def t(key, **kw):
-    entry = STRINGS.get(key)
+def t(name, /, **kw):
+    entry = STRINGS.get(name)
     if entry is None:
-        return key.format(**kw) if kw else key
+        return name.format(**kw) if kw else name
     text = entry.get(LANG) or entry["en"]
     return text.format(**kw) if kw else text
 

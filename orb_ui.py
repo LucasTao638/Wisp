@@ -20,6 +20,7 @@ import remote
 import updates
 import i18n
 from i18n import L, t
+tr = t  # same function; for places where t means the time
 from app_info import APP_NAME
 from context import hide_from_screenshots
 import classic_ui  # reuses its jobs window
@@ -371,7 +372,7 @@ class OrbApp:
             status, colour = self.status, self.accent
 
         # text
-        word = t(STATUS_WORDS.get(status, "status_ready"))
+        word = tr(STATUS_WORDS.get(status, "status_ready"))
         if status in ("thinking", "starting"):
             word += "." * (int(t * 2.5) % 4)
         c.itemconfig(self.status_id, text="  ".join(word), fill=colour)
