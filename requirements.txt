@@ -1,0 +1,9 @@
+faster-whisper
+sounddevice
+numpy
+keyboard
+win11toast
+edge-tts
+pystray
+pillow
+openwakeword

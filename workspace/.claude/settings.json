@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch",
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "TodoWrite",
+      "Task",
+      "ToolSearch",
+      "Bash",
+      "PowerShell",
+      "mcp__windows-mcp"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(del /s:*)",
+      "Bash(rmdir /s:*)",
+      "Bash(format:*)",
+      "Bash(shutdown:*)",
+      "Bash(Remove-Item -Recurse:*)",
+      "PowerShell(Remove-Item -Recurse:*)",
+      "PowerShell(Format-Volume:*)",
+      "PowerShell(Stop-Computer:*)",
+      "PowerShell(Restart-Computer:*)",
+      "Read(**/.env)"
+    ]
+  }
+}
