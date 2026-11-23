@@ -78,6 +78,10 @@ def session_text():
     s = get_state().get("session")
     if not s:
         return None
+    import i18n
+    if i18n.is_zh():
+        import lang_zh
+        return lang_zh.session_text(s)
     m, sec = divmod(int(max(0, s["ends"] - time.time())), 60)
     label = "Focus" if s["phase"] == "focus" else "Break"
     return f"{label} {m}:{sec:02d}  ·  round {s['round']} of {s['rounds']}"
@@ -88,19 +92,29 @@ def advance_session():
     s = get_state().get("session")
     if not s or time.time() < s["ends"]:
         return None
+    import i18n
+    zh = i18n.is_zh()
+    if zh:
+        import lang_zh
     if s["phase"] == "focus":
         add_focus_minutes(s["focus_min"])
         if s["round"] >= s["rounds"]:
             _update(session=None)
             total = int(s["focus_min"] * s["rounds"])
+            if zh:
+                return lang_zh.session_message("complete", rounds=s["rounds"], total=total)
             return f"Session complete. {s['rounds']} round{'s' if s['rounds'] != 1 else ''}, {total} minutes of focus. Well done."
         long_break = s["round"] % 4 == 0
         length = s["break_min"] * (3 if long_break else 1)
         s.update(phase="break", ends=time.time() + length * 60)
         _update(session=s)
+        if zh:
+            return lang_zh.session_message("long_break" if long_break else "break", length=int(length))
         return f"Time for a {int(length)} minute {'long ' if long_break else ''}break. Step away from the screen."
     s.update(phase="focus", round=s["round"] + 1, ends=time.time() + s["focus_min"] * 60)
     _update(session=s)
+    if zh:
+        return lang_zh.session_message("resume", round=s["round"], rounds=s["rounds"], minutes=int(s["focus_min"]))
     return f"Break's over. Round {s['round']} of {s['rounds']}, {int(s['focus_min'])} minutes. Let's go."
 
 

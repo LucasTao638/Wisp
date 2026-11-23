@@ -37,7 +37,7 @@ FILE = ROOT / "routines.json"
 
 DEFAULTS = {
     "gaming mode": {
-        "triggers": ["gaming mode", "game mode", "time to game", "let's game"],
+        "triggers": ["gaming mode", "game mode", "time to game", "let's game", "游戏模式", "开始打游戏"],
         "steps": [
             {"say": "Gaming mode. Launching Steam and Discord."},
             {"stop_focus_session": True},
@@ -46,7 +46,7 @@ DEFAULTS = {
         ],
     },
     "study mode": {
-        "triggers": ["study mode", "homework mode", "time to study", "time to do homework"],
+        "triggers": ["study mode", "homework mode", "time to study", "time to do homework", "学习模式", "写作业模式"],
         "steps": [
             {"say": "Study mode. Starting a 25 minute focus session."},
             {"minimise_all": True},
@@ -54,7 +54,7 @@ DEFAULTS = {
         ],
     },
     "goodnight": {
-        "triggers": ["goodnight", "good night", "i'm going to bed", "bedtime"],
+        "triggers": ["goodnight", "good night", "i'm going to bed", "bedtime", "晚安", "我要睡觉了"],
         "steps": [
             {"say": "Goodnight. Pausing your music and locking the PC."},
             {"media": "play_pause"},
@@ -110,7 +110,8 @@ def check():
 def _norm(text):
     text = re.sub(r"^(hey |ok |okay )?(jarvis|wisp|sidekick)[, ]+", "", text.lower().strip())
     text = re.sub(r"^(please |can you |could you |start |activate |turn on |run |begin |go |do )+", "", text)
-    return re.sub(r"[^a-z0-9' ]+", " ", text).strip()
+    text = re.sub(r"^(请|帮我|启动|开启|开始|运行|执行|进入)+", "", text)
+    return re.sub(r"[^a-z0-9' \u4e00-\u9fff]+", " ", text).strip()
 
 
 def find(text):
@@ -131,7 +132,8 @@ def _find_by_mention(t):
     for name, r in routines.items():
         for phrase in [name] + r.get("triggers", []):
             p = _norm(phrase)
-            if p and re.search(rf"\b{re.escape(p)}\b", t) and (not best or len(p) > len(best[1])):
+            found = (p in t) if not p.isascii() else re.search(rf"\b{re.escape(p)}\b", t)  # Chinese has no spaces
+            if p and found and (not best or len(p) > len(best[1])):
                 best = (name, p)
     return best[0] if best else None
 
@@ -146,7 +148,33 @@ def _thing(target):
     return os.path.basename(target.rstrip("\\/")) or target
 
 
+_ZH_STEPS = {"say": "说「{v}」", "open": "打开{v}", "close": "关闭{v}", "timer": "开始{v}分钟计时",
+             "focus_session": "开始{v}分钟专注", "ask": "让 Claude「{v}」"}
+_ZH_FLAGS = {"minimise_all": "显示桌面", "stop_focus_session": "结束专注", "lock_pc": "锁定电脑"}
+_ZH_MEDIA = {"play_pause": "播放/暂停音乐", "next": "下一首", "previous": "上一首", "mute": "静音"}
+
+
+def _describe_step_zh(step):
+    for key, fmt in _ZH_STEPS.items():
+        if key in step:
+            value = _thing(step[key]) if key == "open" else (f"{step[key]:g}" if isinstance(step[key], (int, float)) else step[key])
+            return fmt.format(v=value)
+    for key, text in _ZH_FLAGS.items():
+        if step.get(key):
+            return text
+    if "media" in step:
+        return _ZH_MEDIA.get(step["media"], step["media"])
+    if "volume" in step:
+        return "调高音量" if step["volume"] == "up" else "调低音量"
+    if "mute_jarvis" in step:
+        return "静音 Wisp" if step["mute_jarvis"] else "取消静音"
+    return "执行操作"
+
+
 def describe_step(step):
+    import i18n
+    if i18n.is_zh():
+        return _describe_step_zh(step)
     if "say" in step:
         return f"says “{step['say']}”"
     if "open" in step:
@@ -181,6 +209,9 @@ def describe(routine):
     steps = [s for s in routine.get("steps", []) if "wait" not in s]
     actions = [s for s in steps if "say" not in s]
     parts = [describe_step(s) for s in (actions or steps)]  # the spoken line is left out if it does other things
+    import i18n
+    if i18n.is_zh():
+        return "、".join(parts) if parts else "暂无操作"
     if not parts:
         return "does nothing yet"
     return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
@@ -215,12 +246,12 @@ def handle_command(text):
     return None
 
 
-def builder_prompt(text):
+def builder_prompt(text, force=False):
     """If you're asking to create or change a routine, the instructions for Claude to do it. Else None."""
     t = _norm(text)
     edits_existing = re.search(r"\b(rename|change|edit|update|modify|tweak)\b|\badd .+ to\b|\bremove .+ from\b", t) \
         and _find_by_mention(t)
-    if not (_CREATE.search(text.lower()) or edits_existing):
+    if not (force or _CREATE.search(text.lower()) or edits_existing):
         return None
     current = json.dumps(load(), indent=2)
     return f"""[ROUTINE BUILDER] The user wants to create or change a routine: a phrase that, when they say it, makes Wisp do several things straight away.
@@ -234,7 +265,8 @@ Do this:
 1. Work out the trigger phrase they want and what should happen. If they're changing or renaming an existing routine, edit that one.
 2. Edit ../routines.json. Each routine is "name": {{"triggers": [...], "steps": [...]}}.
    - name: short and lowercase (e.g. "movie night").
-   - triggers: the exact phrase they said, plus 2-3 natural variations, lowercase, no punctuation. Never use a trigger that would hijack an ordinary request (like "open spotify") unless they asked for exactly that.
+   - triggers: the exact phrase they said, plus 2-3 natural variations, lowercase, no punctuation, in the language
+     they spoke (e.g. Chinese triggers for a Chinese request). Never use a trigger that would hijack an ordinary request (like "open spotify") unless they asked for exactly that.
    - steps: use these instant steps wherever possible:
      {{"say": "text"}}, {{"open": "app: / file / https://url"}}, {{"close": "program name without .exe"}}, {{"minimise_all": true}},
      {{"timer": minutes, "label": "..."}}, {{"focus_session": minutes, "rounds": n}}, {{"stop_focus_session": true}},

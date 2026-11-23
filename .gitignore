@@ -7,12 +7,14 @@ timers.json
 focus.json
 phone.json
 routines.json
+feedback_outbox.json
 *.log
 jobs/
 backups/
 workspace/MEMORY.md
 workspace/mcp.json
 workspace/PLATFORM.md
+workspace/LANGUAGE.md
 workspace/output/
 workspace/projects/
 workspace/.claude/settings.local.json

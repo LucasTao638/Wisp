@@ -23,6 +23,17 @@ Every event also includes: a **random ID** created on your PC (`telemetry.json`)
 
 You can check all of this in [`telemetry.py`](telemetry.py): it's short and it's the only place stats are sent from.
 
+### Feedback you choose to send
+
+When you send feedback (the **Send feedback** window, the phone app's Feedback card, or saying "I have a suggestion: …"), Wisp sends a `feedback_submitted` event to the same PostHog project with:
+
+- the **type** (idea / problem / praise / other) and the **message you wrote**
+- your **star rating** and **email**, only if you filled them in
+- the **end of the log**, only if you ticked *Attach the end of the log* (you can read it in the window first)
+- the Wisp version, your operating system, your language setting, and the same random ID as above
+
+You see and can edit everything before it's sent, and nothing is sent unless you press **Send**. Because it's something you send on purpose, feedback goes even if anonymous usage stats are off. If you're offline it waits in `feedback_outbox.json` and is retried later; delete that file to cancel. Prefer it public? Every feedback window has a **Post on GitHub instead** button.
+
 ## 2. Things that leave your PC so Wisp can work
 
 - **Anthropic (Claude):** your requests, and whatever Claude reads to answer them (web pages, files or screenshots you ask about, your clipboard if you mention it), are sent to Anthropic using your API key. See [Anthropic's privacy policy](https://www.anthropic.com/legal/privacy).

@@ -74,11 +74,15 @@ def run_job(job_id):
         job.update(status="done" if res["ok"] else "failed", result=body, say=say,
                    error=res["error"], session_id=res["session_id"])
     except Exception as exc:  # keep a record even if something breaks
-        job.update(status="failed", error=str(exc), say="The background job failed.")
+        job.update(status="failed", error=str(exc), say=None)
     job["finished"] = time.strftime("%Y-%m-%d %H:%M:%S")
     _save(job)
     log.close()
-    notify(f"Wisp job {job['status']}", job.get("say") or job["task"][:100])
+    import i18n
+    i18n.load_language()  # jobs run in their own process
+    t = i18n.t
+    title = t("job_done_title") if job["status"] == "done" else t("job_failed_title")
+    notify(title, job.get("say") or job["task"][:100])
 
 
 if __name__ == "__main__" and len(sys.argv) == 3 and sys.argv[1] == "run":

@@ -13,8 +13,8 @@ OUT = ROOT / "build"
 # Never shipped: personal data, build junk, dev files
 EXCLUDE_DIRS = {".git", ".github", "build", "__pycache__", ".ruff_cache", ".venv", "jobs", "backups"}
 EXCLUDE_FILES = {"config.json", "secrets.bin", "telemetry.json", "state.json", "timers.json", "focus.json",
-                 "phone.json", "routines.json", "wisp.log", "sidekick.log", "build_release.py"}
-EXCLUDE_PATHS = {"workspace/MEMORY.md", "workspace/mcp.json", "workspace/PLATFORM.md"}
+                 "phone.json", "routines.json", "feedback_outbox.json", "wisp.log", "sidekick.log", "build_release.py"}
+EXCLUDE_PATHS = {"workspace/MEMORY.md", "workspace/mcp.json", "workspace/PLATFORM.md", "workspace/LANGUAGE.md"}
 EXCLUDE_TREES = {"workspace/output", "workspace/projects"}
 
 WINDOWS_ONLY = {".bat", ".ps1"}

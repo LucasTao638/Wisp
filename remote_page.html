@@ -110,6 +110,10 @@
   .x { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line); color: var(--dim); }
   .empty { color: var(--dim); font-size: 14px; padding: 12px 0; }
   .pills { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .fb textarea, .fb input { width: 100%; box-sizing: border-box; margin: 10px 0 0; padding: 10px 12px; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; resize: vertical; }
+  .fb .big { margin-top: 12px; width: 100%; }
+  .pill.on { border-color: var(--accent); color: var(--accent); }
   .pill { padding: 8px 14px; border-radius: 18px; border: 1px solid var(--line); background: var(--panel); font-size: 13px; }
   .pill:active { border-color: var(--accent); }
   .job-result { white-space: pre-wrap; font-size: 13px; color: #b9c3ce; padding: 0 0 12px; display: none; }
@@ -182,6 +186,19 @@
     <div class="row"><div>Read replies aloud here<small>Uses your phone's voice</small></div><button class="switch" id="swPhone"></button></div>
     <div class="row"><div>Mute Wisp<small>No speaking on the PC at all</small></div><button class="switch" id="swMute"></button></div>
     <div class="row"><div>Unpair this phone<small>You'll need a new PIN to reconnect</small></div><button class="pill" id="unpair">Unpair</button></div>
+    <h2 class="hud">Feedback</h2>
+    <div class="card fb">
+      <p class="note" style="text-align:left;margin:0 0 10px">Ideas, problems, anything. It goes straight to the developer.</p>
+      <div class="pills" id="fbKind">
+        <button class="pill on" data-kind="idea">Idea</button>
+        <button class="pill" data-kind="problem">Problem</button>
+        <button class="pill" data-kind="praise">Praise</button>
+        <button class="pill" data-kind="other">Other</button>
+      </div>
+      <textarea id="fbText" rows="4" maxlength="5000" placeholder="What would make Wisp better?"></textarea>
+      <input id="fbEmail" type="email" maxlength="120" placeholder="Email (optional, if you'd like a reply)">
+      <button class="big" id="fbSend">Send feedback</button>
+    </div>
   </section>
 
   <section id="state">
@@ -222,6 +239,61 @@
 
 <script>
 const $ = s => document.querySelector(s);
+
+// ---------- language (the PC tells us via <html lang>) ----------
+const ZH = document.documentElement.lang.startsWith("zh");
+const ZH_TEXT = {
+  "Connecting": "连接中", "Connection to your PC": "与电脑的连接", "Run as a background job": "作为后台任务运行",
+  "Ask your PC anything…": "让电脑帮你做任何事……", "Send": "发送", "Media": "媒体", "Previous": "上一首",
+  "Play / pause": "播放 / 暂停", "Next": "下一首", "Volume −": "音量 −", "Mute PC": "电脑静音", "Volume +": "音量 +",
+  "PC": "电脑", "Screenshot": "截图", "Open HUD": "打开全屏界面", "Lock PC": "锁定电脑", "Lock your PC?": "锁定电脑？",
+  "Stop task": "停止任务", "New chat": "新对话", "Clear here": "清空此处", "Routines": "例程",
+  "Add one in the chat: “when I say movie night, open Netflix and turn the volume down”":
+    "在聊天中添加：“当我说电影之夜的时候，打开网飞并把音量调低”",
+  "Settings": "设置", "Speak replies on the PC": "在电脑上朗读回复", "For requests sent from this phone": "针对从这部手机发送的请求",
+  "Read replies aloud here": "在手机上朗读回复", "Uses your phone's voice": "使用手机自带的声音", "Mute Wisp": "Wisp 静音",
+  "No speaking on the PC at all": "电脑上完全不发声", "Unpair this phone": "取消配对这部手机",
+  "You'll need a new PIN to reconnect": "重新连接需要新的 PIN 码", "Unpair": "取消配对", "Timers": "计时器",
+  "+ 5 min": "+ 5 分钟", "+ 10 min": "+ 10 分钟", "+ 25 min": "+ 25 分钟", "+ 1 hour": "+ 1 小时",
+  "Focus session": "专注时段", "Not running": "未运行", "25 min focus, 5 min breaks": "专注 25 分钟，休息 5 分钟",
+  "Start": "开始", "Stop": "停止", "Background jobs": "后台任务", "Chat": "聊天", "Controls": "控制", "Timers & jobs": "计时与任务",
+  "Pair your phone": "配对手机", "Connect phone": "连接手机", "Name this phone": "给这部手机起个名字", "Connect": "连接",
+  "Your PC's screen": "电脑屏幕", "Tap to close": "点击关闭", "Couldn't pair.": "配对失败。",
+  "Can't reach your PC. Is Wisp running?": "无法连接电脑。Wisp 在运行吗？",
+  "Searching the web": "正在搜索网络", "Reading": "正在阅读", "Running": "正在运行", "Writing": "正在写入", "Editing": "正在编辑",
+  "Finding files": "正在查找文件", "Searching files": "正在搜索文件", "Planning": "正在规划", "Delegating": "正在分派",
+  "DETAILS": "详情", "Done.": "完成。", "Online": "在线", "Processing": "处理中", "Speaking": "说话中", "Listening": "聆听中",
+  "Starting": "启动中", "Couldn't reach your PC": "无法连接电脑", "Next message runs in the background": "下一条消息将在后台运行",
+  "Normal message": "普通消息", "Cleared on this phone": "已清空此手机上的记录", "Timer": "计时器", "Alarm": "闹钟",
+  "Reminder": "提醒", "No timers. Tap one below, or just ask.": "没有计时器。点下面的按钮，或者直接说。",
+  "Run": "运行", "No routines yet.": "还没有例程。", "Still working on it…": "还在处理中……",
+  "No background jobs. Tap BG in the chat to start one.": "没有后台任务。在聊天中点 BG 即可开始。",
+  "Sent": "已发送", "Timer set": "计时器已设置", "Running ": "正在运行 ", "Session stopped": "专注时段已停止",
+  "Focus session started": "专注时段已开始", "Unpair this phone?": "取消配对这部手机？", "Taking a screenshot…": "正在截图……",
+  "Couldn't get a screenshot": "截图失败", "done": "完成", "failed": "失败", "running": "运行中", "queued": "排队中",
+  "Feedback": "反馈", "Ideas, problems, anything. It goes straight to the developer.": "想法、问题，什么都可以，会直接发给开发者。",
+  "Idea": "建议", "Problem": "问题", "Praise": "好评", "Other": "其他", "What would make Wisp better?": "怎样能让 Wisp 更好用？",
+  "Email (optional, if you'd like a reply)": "邮箱（选填，如需回复）", "Send feedback": "发送反馈",
+  "Thanks! Your feedback was sent.": "谢谢！反馈已发送。", "Saved - it'll be sent when your PC is online.": "已保存，电脑联网后会自动发送。",
+  "Feedback isn't set up in this copy of Wisp.": "此版本的 Wisp 未配置反馈功能。", "Write something first.": "请先写点内容。",
+  "Feedback couldn't be sent": "反馈发送失败", "Phone": "手机", "Android phone": "安卓手机",
+};
+const T = s => (ZH && ZH_TEXT[s]) || s;
+function translatePage() {
+  if (!ZH) return;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n; (n = walker.nextNode());) {
+    const raw = n.nodeValue, key = raw.trim();
+    if (key && ZH_TEXT[key]) n.nodeValue = raw.replace(key, ZH_TEXT[key]);
+  }
+  for (const el of document.querySelectorAll("[placeholder],[title],[aria-label],[data-confirm],[alt]"))
+    for (const a of ["placeholder", "title", "aria-label", "data-confirm", "alt"])
+      if (el.hasAttribute(a) && ZH_TEXT[el.getAttribute(a)]) el.setAttribute(a, ZH_TEXT[el.getAttribute(a)]);
+  document.querySelectorAll("p").forEach(p => {
+    if (p.textContent.startsWith("On your PC")) p.innerHTML = "在电脑上右键点击光球，选择<b>连接手机</b>，然后输入显示的 6 位 PIN 码。";
+  });
+}
+translatePage();
 let token = localStorage.getItem("sk_token") || "";
 let seq = 0, polling = false, bgMode = false, readAloud = localStorage.getItem("sk_read") === "1";
 let turn = null;  // the current reply bubble
@@ -243,7 +315,7 @@ function toast(text) {
 // ---------- pairing ----------
 function showPair() {
   $("#pair").classList.add("show");
-  $("#devname").value ||= /iphone/i.test(navigator.userAgent) ? "iPhone" : /ipad/i.test(navigator.userAgent) ? "iPad" : /android/i.test(navigator.userAgent) ? "Android phone" : "Phone";
+  $("#devname").value ||= /iphone/i.test(navigator.userAgent) ? "iPhone" : /ipad/i.test(navigator.userAgent) ? "iPad" : /android/i.test(navigator.userAgent) ? T("Android phone") : T("Phone");
 }
 $("#pairBtn").onclick = async () => {
   $("#pairErr").textContent = "";
@@ -251,11 +323,11 @@ $("#pairBtn").onclick = async () => {
     const res = await fetch("/api/pair", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pin: $("#pin").value.trim(), name: $("#devname").value.trim() }) });
     const data = await res.json();
-    if (!data.token) { $("#pairErr").textContent = data.error || "Couldn't pair."; return; }
+    if (!data.token) { $("#pairErr").textContent = data.error || T("Couldn't pair."); return; }
     token = data.token; localStorage.setItem("sk_token", token);
     $("#pair").classList.remove("show"); $("#pin").value = "";
     start();
-  } catch { $("#pairErr").textContent = "Can't reach your PC. Is Wisp running?"; }
+  } catch { $("#pairErr").textContent = T("Can't reach your PC. Is Wisp running?"); }
 };
 $("#pin").addEventListener("keydown", e => { if (e.key === "Enter") $("#pairBtn").click(); });
 
@@ -277,7 +349,7 @@ function friendly(step) {
   const map = { WebSearch: "Searching the web", WebFetch: "Reading", Bash: "Running", PowerShell: "Running", Read: "Reading", Write: "Writing",
     Edit: "Editing", Glob: "Finding files", Grep: "Searching files", TodoWrite: "Planning", Task: "Delegating" };
   const n = name.replace(/^mcp__windows-mcp__/, "");
-  return (map[n] || n) + (detail ? ": " + detail : "");
+  return T(map[n] || n) + (detail ? (ZH ? "：" : ": ") + detail : "");
 }
 
 function handle(ev, live) {
@@ -289,7 +361,7 @@ function handle(ev, live) {
     const say = b.querySelector(".say");
     if (b.hasSay) say.innerHTML += "<br>" + clean(text); else say.innerHTML = clean(text);
     b.hasSay = true; scrollDown();
-    if (live && readAloud && "speechSynthesis" in window) { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(text)); }
+    if (live && readAloud && "speechSynthesis" in window) { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); if (ZH) u.lang = "zh-CN"; speechSynthesis.speak(u); }
   }
   else if (kind === "reply") {
     if (!text.trim()) return;
@@ -300,21 +372,21 @@ function handle(ev, live) {
       b.querySelector(".say").innerHTML = clean(lines[0]); b.hasSay = true;
       rest = lines.slice(1).join("\n").trim();
     }
-    if (rest) { const d = document.createElement("details"); d.innerHTML = "<summary>DETAILS</summary><pre>" + clean(rest) + "</pre>"; b.appendChild(d); }
+    if (rest) { const d = document.createElement("details"); d.innerHTML = "<summary>" + T("DETAILS") + "</summary><pre>" + clean(rest) + "</pre>"; b.appendChild(d); }
     scrollDown();
   }
   else if (kind === "alert") { add("alert", esc(text)); if (live && navigator.vibrate) navigator.vibrate([120, 80, 120]); }
   else if (kind === "error") { add("note", "⚠ " + esc(text)); }
-  else if (kind === "info") { if (/paired|Stopped|fresh conversation/i.test(text)) add("note", esc(text)); }
+  else if (kind === "info") { if (/paired|Stopped|fresh conversation|已配对|已停止|新对话/i.test(text)) add("note", esc(text)); }
   else if (kind === "status") {
     setStatus(text);
-    if ((text === "ready") && turn) { const s = turn.querySelector(".steps"); if (s) s.textContent = ""; if (!turn.hasSay) turn.querySelector(".say").textContent = "Done."; turn = null; }
+    if ((text === "ready") && turn) { const s = turn.querySelector(".steps"); if (s) s.textContent = ""; if (!turn.hasSay) turn.querySelector(".say").textContent = T("Done."); turn = null; }
   }
 }
 
 function setStatus(s) {
   const words = { ready: "Online", thinking: "Processing", speaking: "Speaking", listening: "Listening", starting: "Starting" };
-  $("#status").textContent = words[s] || s;
+  $("#status").textContent = T(words[s] || s);
   const o = $("#orb").style;
   const amber = getComputedStyle(document.documentElement).getPropertyValue("--amber");
   o.setProperty("--c", s === "thinking" ? amber : "var(--accent)");
@@ -326,13 +398,13 @@ async function send() {
   const box = $("#input"); let text = box.value.trim(); if (!text) return;
   if (bgMode) { text = "in the background " + text; bgMode = false; $("#bg").classList.remove("on"); }
   box.value = ""; box.style.height = "";
-  try { await post("/api/ask", { text }); } catch { toast("Couldn't reach your PC"); }
+  try { await post("/api/ask", { text }); } catch { toast(T("Couldn't reach your PC")); }
 }
 $("#send").onclick = send;
 $("#input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
 $("#input").addEventListener("input", e => { e.target.style.height = ""; e.target.style.height = Math.min(120, e.target.scrollHeight) + "px"; });
-$("#bg").onclick = () => { bgMode = !bgMode; $("#bg").classList.toggle("on", bgMode); toast(bgMode ? "Next message runs in the background" : "Normal message"); };
-$("#clearLog").onclick = () => { log.innerHTML = ""; turn = null; toast("Cleared on this phone"); };
+$("#bg").onclick = () => { bgMode = !bgMode; $("#bg").classList.toggle("on", bgMode); toast(T(bgMode ? "Next message runs in the background" : "Normal message")); };
+$("#clearLog").onclick = () => { log.innerHTML = ""; turn = null; toast(T("Cleared on this phone")); };
 
 // ---------- live updates ----------
 async function poll() {
@@ -367,16 +439,16 @@ function render() {
   setStatus(st.status);
   const gone = (Date.now() - stateAt) / 1000;
   $("#timers").innerHTML = st.timers.length ? st.timers.map(t => `
-    <div class="item"><div class="grow"><b>${esc(t.label)}</b><small>${t.kind === "timer" ? "Timer" : (t.kind === "alarm" ? "Alarm" : "Reminder") + " · " + esc(t.when)}</small></div>
+    <div class="item"><div class="grow"><b>${esc(t.label)}</b><small>${t.kind === "timer" ? T("Timer") : T(t.kind === "alarm" ? "Alarm" : "Reminder") + " · " + esc(t.when)}</small></div>
     <span class="count">${t.kind === "timer" || t.left < 3600 ? fmt(t.left - gone) : ""}</span>
-    <button class="x" data-cancel="${t.id}">✕</button></div>`).join("") : '<div class="empty">No timers. Tap one below, or just ask.</div>';
-  $("#sessionText").textContent = st.session || "Not running";
-  $("#sessionBtn").textContent = st.session ? "Stop" : "Start";
-  $("#focusToday").textContent = st.focus_today ? `${st.focus_today} min of focus today` : "25 min focus, 5 min breaks";
+    <button class="x" data-cancel="${t.id}">✕</button></div>`).join("") : '<div class="empty">' + T("No timers. Tap one below, or just ask.") + '</div>';
+  $("#sessionText").textContent = st.session || T("Not running");
+  $("#sessionBtn").textContent = T(st.session ? "Stop" : "Start");
+  $("#focusToday").textContent = st.focus_today ? (ZH ? `今天已专注 ${st.focus_today} 分钟` : `${st.focus_today} min of focus today`) : T("25 min focus, 5 min breaks");
   $("#routines").innerHTML = (st.routines || []).map(r => `
     <div class="item"><div class="grow"><b>${esc(r.name.replace(/\b\w/g, c => c.toUpperCase()))}</b><small>${esc(r.says.charAt(0).toUpperCase() + r.says.slice(1))}</small></div>
-    <button class="pill" data-routine="${esc(r.name)}">Run</button></div>`).join("")
-    || '<div class="empty">No routines yet.</div>';
+    <button class="pill" data-routine="${esc(r.name)}">${T("Run")}</button></div>`).join("")
+    || '<div class="empty">' + T("No routines yet.") + '</div>';
   $("#swPc").classList.toggle("on", st.speak_on_pc); $("#swMute").classList.toggle("on", st.muted);
   $("#swPhone").classList.toggle("on", readAloud);
   const colours = { done: "var(--accent)", failed: "var(--red)", running: "var(--amber)", queued: "var(--amber)" };
@@ -384,36 +456,56 @@ function render() {
   $("#jobs").innerHTML = st.jobs.length ? st.jobs.map(j => `
     <div class="item job ${openJobs.has(j.id) ? "open" : ""}" data-id="${esc(j.id)}" style="flex-wrap:wrap">
       <div class="grow"><b>${esc(j.task)}</b><small>${esc(j.say || "")}</small></div>
-      <span class="badge" style="color:${colours[j.status] || "var(--dim)"}">${esc(j.status)}</span>
-      <div class="job-result" style="flex-basis:100%">${clean(j.result || "Still working on it…")}</div></div>`).join("")
-    : '<div class="empty">No background jobs. Tap BG in the chat to start one.</div>';
+      <span class="badge" style="color:${colours[j.status] || "var(--dim)"}">${esc(T(j.status))}</span>
+      <div class="job-result" style="flex-basis:100%">${clean(j.result || T("Still working on it…"))}</div></div>`).join("")
+    : '<div class="empty">' + T("No background jobs. Tap BG in the chat to start one.") + '</div>';
 }
 setInterval(() => { if (lastState && $("#state").classList.contains("show")) render(); }, 1000);  // tick the countdowns
 setInterval(refresh, 5000);
 
 document.addEventListener("click", e => {
   const t = e.target.closest("[data-act]");
-  if (t) { if (t.dataset.confirm && !confirm(t.dataset.confirm)) return; action(t.dataset.act); toast("Sent"); if (navigator.vibrate) navigator.vibrate(15); return; }
+  if (t) { if (t.dataset.confirm && !confirm(t.dataset.confirm)) return; action(t.dataset.act); toast(T("Sent")); if (navigator.vibrate) navigator.vibrate(15); return; }
   const c = e.target.closest("[data-cancel]"); if (c) { action("cancel_timer", c.dataset.cancel); return; }
-  const s = e.target.closest("[data-say]"); if (s) { post("/api/ask", { text: s.dataset.say }).then(refresh); toast("Timer set"); return; }
-  const r = e.target.closest("[data-routine]"); if (r) { action("routine", r.dataset.routine); toast("Running " + r.dataset.routine); return; }
+  const s = e.target.closest("[data-say]"); if (s) { post("/api/ask", { text: s.dataset.say }).then(refresh); toast(T("Timer set")); return; }
+  const r = e.target.closest("[data-routine]"); if (r) { action("routine", r.dataset.routine); toast(T("Running ") + r.dataset.routine); return; }
   const j = e.target.closest(".job"); if (j) j.classList.toggle("open");
 });
 $("#swPc").onclick = () => action("speak_on_pc", !lastState?.speak_on_pc);
 $("#swMute").onclick = () => action("mute", !lastState?.muted);
-$("#sessionBtn").onclick = () => { const running = !!lastState?.session; action(running ? "stop_session" : "focus_session", 25); toast(running ? "Session stopped" : "Focus session started"); };
+$("#sessionBtn").onclick = () => { const running = !!lastState?.session; action(running ? "stop_session" : "focus_session", 25); toast(T(running ? "Session stopped" : "Focus session started")); };
 $("#swPhone").onclick = () => { readAloud = !readAloud; localStorage.setItem("sk_read", readAloud ? "1" : "0"); render(); };
-$("#unpair").onclick = () => { if (!confirm("Unpair this phone?")) return; localStorage.removeItem("sk_token"); token = ""; showPair(); };
+$("#unpair").onclick = () => { if (!confirm(T("Unpair this phone?"))) return; localStorage.removeItem("sk_token"); token = ""; showPair(); };
 
 $("#shotBtn").onclick = async () => {
-  toast("Taking a screenshot…");
+  toast(T("Taking a screenshot…"));
   try {
     const res = await api("/api/screenshot"); if (!res.ok) throw 0;
     const url = URL.createObjectURL(await res.blob());
     $("#shot img").src = url; $("#shot").classList.add("show");
-  } catch { toast("Couldn't get a screenshot"); }
+  } catch { toast(T("Couldn't get a screenshot")); }
 };
 $("#shot").onclick = () => $("#shot").classList.remove("show");
+
+// ---------- feedback ----------
+let fbKind = "idea";
+document.querySelectorAll("#fbKind [data-kind]").forEach(b => b.onclick = () => {
+  fbKind = b.dataset.kind;
+  document.querySelectorAll("#fbKind [data-kind]").forEach(x => x.classList.toggle("on", x === b));
+});
+$("#fbSend").onclick = async () => {
+  const message = $("#fbText").value.trim();
+  if (!message) { toast(T("Write something first.")); return; }
+  $("#fbSend").disabled = true;
+  try {
+    const data = await (await post("/api/feedback", { kind: fbKind, message, email: $("#fbEmail").value.trim() })).json();
+    const words = { sent: "Thanks! Your feedback was sent.", queued: "Saved - it'll be sent when your PC is online.",
+                    not_configured: "Feedback isn't set up in this copy of Wisp." };
+    toast(T(words[data.result] || "Feedback couldn't be sent"));
+    if (data.result === "sent" || data.result === "queued") $("#fbText").value = "";
+  } catch { toast(T("Feedback couldn't be sent")); }
+  $("#fbSend").disabled = false;
+};
 
 // ---------- tabs ----------
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => {

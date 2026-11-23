@@ -53,13 +53,32 @@ class Recorder:
 class Transcriber:
     """Speech-to-text with faster-whisper. Runs on your CPU, free, works offline after first download."""
 
-    def __init__(self, model_name="base.en"):
+    def __init__(self, model_name="base.en", language="en"):
         from faster_whisper import WhisperModel
+        self.language = language
+        if language != "en" and model_name.endswith(".en"):  # ".en" models only understand English
+            model_name = "small"
         self.model = WhisperModel(model_name, device="cpu", compute_type="int8")
 
     def transcribe(self, audio):
+        if self.language == "zh":
+            # The prompt nudges Whisper towards Simplified characters and punctuation.
+            segments, _ = self.model.transcribe(audio, language="zh", vad_filter=True, beam_size=1,
+                                                initial_prompt="以下是普通话的句子，使用简体中文。")
+            return to_simplified("".join(s.text.strip() for s in segments).strip())
         segments, _ = self.model.transcribe(audio, language="en", vad_filter=True, beam_size=1)
         return " ".join(s.text.strip() for s in segments).strip()
+
+
+# Common Traditional -> Simplified characters Whisper sometimes produces (not a full converter).
+_T2S = str.maketrans("們個這說話時間鐘點們設計鬧響後臺開關幫記讓請問麼為還沒會對嗎錯誤電腦網頁裡聽寫讀發給線視頻"
+                     "鬆龍鳥歡氣動學習書車東門見長風飛馬魚麼於與從來過們國實現應該當覺經幾頭樂應",
+                     "们个这说话时间钟点们设计闹响后台开关帮记让请问么为还没会对吗错误电脑网页里听写读发给线视频"
+                     "松龙鸟欢气动学习书车东门见长风飞马鱼么于与从来过们国实现应该当觉经几头乐应")
+
+
+def to_simplified(text):
+    return text.translate(_T2S)
 
 
 # ---------------- wake word ("hey jarvis") ----------------
@@ -264,11 +283,13 @@ class Speaker:
 
     @staticmethod
     def _sentences(text):
-        parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+", text) if p.strip()]
+        # English sentences end with . ! ? and a space; Chinese ones with 。！？ (no space)
+        parts = [p.strip() for p in re.split(r"(?<=[.!?])\s+|(?<=[\u3002\uff01\uff1f])", text) if p.strip()]
         merged = []
-        for p in parts:  # keep very short bits ("Done.") with the next sentence
-            if merged and len(merged[-1]) < 25:
-                merged[-1] += " " + p
+        for p in parts:  # keep very short bits ("Done." / "好的。") with the next sentence
+            short = 25 if p.isascii() else 8
+            if merged and len(merged[-1]) < short:
+                merged[-1] += ("" if not p.isascii() else " ") + p
             else:
                 merged.append(p)
         return merged or [text]

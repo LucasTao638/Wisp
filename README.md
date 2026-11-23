@@ -42,8 +42,6 @@ Wisp is free. Claude is pay-as-you-go through your own Anthropic API key: you pa
 
 ## Using it
 
-| Do this | To |
-|---|---|
 | Do this (Windows) | Mac | To |
 |---|---|---|
 | Say **"Hey Jarvis"** (or your wake phrase), hold **F9**, or click the orb | Wake phrase, hold **Right Option**, or click the orb | Talk |
@@ -62,6 +60,16 @@ Things to try:
 - "Set a timer for 10 minutes for the pasta" · "Remind me at 5pm to call mum" · "Start a focus session"
 - "When I say gaming mode, open Steam and Discord" · "What routines do I have?"
 - "Remember that my favourite team is…" · "Good morning" (daily briefing)
+
+**Feedback and ideas:** right-click the orb > **Send feedback**, use the Feedback card in the phone app, or just say *"I have a suggestion: …"* / *"report a bug"*. It goes straight to the developer (you see exactly what's sent first). Wisp also asks once, after you've used it for a week.
+
+### 中文 / Chinese
+
+Wisp works in Simplified Chinese: you speak Chinese, it answers and speaks in Chinese, and the menus, HUD, Settings and phone app are in Chinese. Pick **中文** on the first setup screen, or later in **Settings > Language** (then restart).
+
+- Quick commands work in Chinese too: *"设一个十分钟的计时器"*, *"明天早上八点提醒我开会"*, *"开始专注"*, *"打开微信"*, *"打开B站"*, *"在后台帮我调研一下……"*, *"当我说学习模式的时候，打开记事本"*, *"我有个建议：……"*
+- Chinese uses a larger speech-recognition model (Whisper "small", about 460 MB, downloaded once the first time you talk).
+- The wake phrases ("Hey Jarvis" etc.) are English-only for now. Say the wake phrase, then speak Chinese, or hold the talk key.
 
 **Phone remote:** right-click the orb > **Connect phone**, open the address on your phone (same Wi-Fi) and enter the PIN. Add it to your home screen to use it like an app. Away from home? Use [Tailscale](https://tailscale.com) (free); don't open ports on your router.
 

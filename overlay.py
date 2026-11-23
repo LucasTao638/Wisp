@@ -13,6 +13,8 @@ import tkinter as tk
 from tkinter import font as tkfont
 
 import background
+import i18n
+from i18n import t
 import focus
 import timers
 from context import hide_from_screenshots
@@ -243,8 +245,8 @@ class FullHud:
             "chat": (W - m - pw, m + 250 * u, W - m, H * 0.74),
             "jobs": (m, H * 0.68 + 30 * u, m + pw, H - m - 30 * u),
         }
-        for name, title in (("system", "System"), ("activity", "Activity"),
-                            ("chat", "Conversation"), ("jobs", "Timers & jobs")):
+        for name, title in (("system", t("hud_system")), ("activity", t("hud_activity")),
+                            ("chat", t("hud_conversation")), ("jobs", t("hud_timers_jobs"))):
             bracket_panel(c, *self.panels[name], A, PANEL, u, title, self.f_title)
         bracket_panel(c, *self.panels["time"], A, PANEL, u)
 
@@ -267,14 +269,14 @@ class FullHud:
         self.entry.bind("<Return>", lambda e: self._send())
         self.entry.bind("<Escape>", lambda e: self.close())
         self.entry.bind("<Key>", lambda e: setattr(self, "last_activity", time.time()))
-        c.create_text(W / 2, ey + 40 * u, text="Type here, or just talk  ·  Esc to close",
+        c.create_text(W / 2, ey + 40 * u, text=t("hud_type_hint"),
                       font=self.f_small, fill=DIM, tags="static")
 
         # bottom-right hint + close button
         import hotkeys
         key = hotkeys.label(self.cfg.get("hud_key", "ctrl+shift+j"))
         wake = (self.cfg.get("wake_word") or "").replace("_", " ").title()
-        hint = f"{key}  open / close" + (f"      Say “{wake}” to talk" if wake else "")
+        hint = t("hud_open_close", key=key) + ("      " + t("hud_say_to_talk", phrase=wake) if wake else "")
         c.create_text(W - m, H - m, text=hint, anchor="se", font=self.f_small, fill=DIM, tags="static")
         self.close_id = c.create_text(W / 2, m, text="✕", font=self.f_status, fill=DIM, tags="static")
 
@@ -316,7 +318,7 @@ class FullHud:
         sy = (t * 140 * u) % self.H
         c.create_line(0, sy, self.W, sy, fill=mix(KEY, A, 0.12), tags="orb")
 
-        word = STATUS_WORDS.get(status, "ONLINE")
+        word = t(f"status_{status}") if status in ("starting", "ready", "listening", "thinking", "speaking") else t("status_ready")
         if status in ("thinking", "starting"):
             word += "." * (int(t * 2.5) % 4)
         c.itemconfig(self.status_id, text="   ".join(word), fill=colour)
@@ -353,28 +355,28 @@ class FullHud:
         c.create_text(x1 + 24 * u, y1 + 125 * u, text=time.strftime("%A %d %B").upper(), anchor="w",
                       font=self.f_title, fill=light, tags="dyn")
         hour = time.localtime().tm_hour
-        greet = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
+        greet = t("greet_morning") if hour < 12 else t("greet_afternoon") if hour < 18 else t("greet_evening")
         name = self.cfg.get("user_name")
-        c.create_text(x1 + 24 * u, y1 + 155 * u, text=greet + (f", {name}" if name else "") + ".",
+        c.create_text(x1 + 24 * u, y1 + 155 * u, text=greet + ((("，" if i18n.is_zh() else ", ") + name) if name else "") + ("。" if i18n.is_zh() else "."),
                       anchor="w", font=self.f_body, fill=DIM, tags="dyn")
         minutes = int(focus.focus_minutes_today())
         if minutes:
-            c.create_text(x2 - 20 * u, y1 + 155 * u, text=f"{minutes} MIN FOCUS TODAY", anchor="e",
+            c.create_text(x2 - 20 * u, y1 + 155 * u, text=t("hud_focus_today", minutes=minutes), anchor="e",
                           font=self.f_small, fill=A, tags="dyn")
 
         # system
         self.stats.update()
         x1, y1, x2, y2 = self.panels["system"]
         gx, gw = x1 + 20 * u, (x2 - x1) - 40 * u
-        battery_label = "BATTERY" + (" (CHARGING)" if self.stats.charging and self.stats.battery is not None else "")
-        for i, (label, val) in enumerate((("CPU", self.stats.cpu), ("MEMORY", self.stats.mem),
+        battery_label = t("hud_battery") + (t("hud_charging") if self.stats.charging and self.stats.battery is not None else "")
+        for i, (label, val) in enumerate(((t("hud_cpu"), self.stats.cpu), (t("hud_memory"), self.stats.mem),
                                           (battery_label, self.stats.battery))):
             gauge(c, gx, y1 + (62 + i * 50) * u, gw, u, label, val, A, PANEL, self.f_value, self.f_small)
 
         # activity
         x1, y1, x2, y2 = self.panels["activity"]
         y = y1 + 52 * u
-        lines = self.activity[-int((y2 - y1 - 60 * u) // (24 * u)):] or [("", "Nothing yet - ask me something.")]
+        lines = self.activity[-int((y2 - y1 - 60 * u) // (24 * u)):] or [("", t("hud_nothing_yet"))]
         for when, what in lines:
             c.create_text(x1 + 18 * u, y, text=when, anchor="nw", font=self.f_small, fill=DIM, tags="dyn")
             c.create_text(x1 + 100 * u, y, text=what[:46], anchor="nw", font=self.f_small, fill=light, tags="dyn")
@@ -388,7 +390,7 @@ class FullHud:
         for kind, text in reversed(items):
             text = clean_markdown(text)
             text = text if len(text) < 160 else text[:157] + "…"
-            tid = c.create_text(x1 + 18 * u, y, text=("YOU   " if kind == "user" else "") + text, anchor="sw",
+            tid = c.create_text(x1 + 18 * u, y, text=(t("hud_you") + "   " if kind == "user" else "") + text, anchor="sw",
                                 width=x2 - x1 - 36 * u, font=self.f_small,
                                 fill=mix(A, "#ffffff", 0.35) if kind == "user" else light, tags="dyn")
             bx1, by1, bx2, by2 = c.bbox(tid) or (0, y, 0, y)
@@ -422,7 +424,7 @@ class FullHud:
         icons = {"done": ("✓", A), "failed": ("✗", "#ff6b6b"), "running": ("◌", "#ffb547"),
                  "queued": ("◌", "#ffb547")}
         if not self._jobs and not timers.upcoming():
-            c.create_text(x1 + 18 * u, y, text='None. Try "set a timer for 10 minutes"', anchor="nw",
+            c.create_text(x1 + 18 * u, y, text=t("hud_no_timers"), anchor="nw",
                           font=self.f_small, fill=DIM, tags="dyn")
         for job in self._jobs:
             if y > y2 - 24 * u:

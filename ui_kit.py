@@ -27,6 +27,13 @@ VOICES = [
     ("en-US-GuyNeural", "Guy - American male"),
     ("en-US-AriaNeural", "Aria - American female"),
 ]
+VOICES_ZH = [
+    ("zh-CN-YunxiNeural", "云希 - 男声，沉稳"),
+    ("zh-CN-YunyangNeural", "云扬 - 男声，播音腔"),
+    ("zh-CN-XiaoxiaoNeural", "晓晓 - 女声，温暖"),
+    ("zh-CN-XiaoyiNeural", "晓伊 - 女声，活泼"),
+    ("zh-TW-YunJheNeural", "雲哲 - 男声，台湾口音"),
+]
 WAKE_WORDS = [("hey_jarvis", "“Hey Jarvis”"), ("hey_mycroft", "“Hey Mycroft”"), ("alexa", "“Alexa”"),
               ("", "Off (use the hotkey or click the orb)")]
 ACCENTS = ["#38d6ff", "#7c8cff", "#b48cff", "#ff6bb5", "#ff8a3d", "#3fd68c", "#e8eaed"]

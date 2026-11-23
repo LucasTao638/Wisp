@@ -68,8 +68,29 @@ Use the most reliable method first:
 """
 
 
+LANGUAGE_GUIDES = {
+    "en": "# Language\nThe user speaks English. Reply in English.\n",
+    "zh": """# Language: Simplified Chinese (Mandarin)
+- The user speaks Mandarin. **Always reply in Simplified Chinese (简体中文)**, including the spoken line.
+  Keep the literal English prefix `SAY:` at the start of the spoken line, e.g. `SAY: 好的，已经帮你打开了。`
+- Speech-to-text may produce homophone mistakes (同音字) or Traditional characters; work out what they meant.
+- Spoken lines should sound natural when read aloud: short sentences, no English abbreviations or symbols
+  unless needed; write numbers the way they'd be said.
+- Search the web in whichever language gives the best results, but answer in Chinese.
+- Keep your polite, composed butler style (礼貌、沉稳、简洁).
+""",
+}
+
+
+def write_language_guide():
+    """Tell Claude which language to use (workspace/LANGUAGE.md, imported by CLAUDE.md)."""
+    import i18n
+    (WORKSPACE / "LANGUAGE.md").write_text(LANGUAGE_GUIDES.get(i18n.LANG, LANGUAGE_GUIDES["en"]), encoding="utf-8")
+
+
 def write_platform_guide():
     """Tell Claude which OS this is and how to control it (workspace/PLATFORM.md, imported by CLAUDE.md)."""
+    write_language_guide()
     (WORKSPACE / "PLATFORM.md").write_text(MAC_GUIDE if sys.platform == "darwin" else WINDOWS_GUIDE,
                                            encoding="utf-8")
 
@@ -161,7 +182,7 @@ def _summarise_tool_input(tool_input):
     return ""
 
 
-_SAY_LINE = re.compile(r"^[\s*_>]*SAY:[\s*_]*(.+?)[\s*_]*$", re.IGNORECASE)
+_SAY_LINE = re.compile(r"^[\s*_>]*SAY[:\uff1a][\s*_]*(.+?)[\s*_]*$", re.IGNORECASE)  # SAY: or SAY\uff1a
 
 
 class _SayWatcher:
@@ -306,7 +327,7 @@ def split_say(text):
     say, keep = "", []
     for line in text.splitlines():
         stripped = line.strip().lstrip("*_").strip()
-        if stripped.upper().startswith("SAY:"):
+        if stripped.upper().startswith(("SAY:", "SAY\uff1a")):
             say = stripped[4:].strip().strip("*_").strip()
         else:
             keep.append(line)

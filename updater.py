@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parent
 
 # Your data - never replaced by an update
 PROTECTED_FILES = {"config.json", "state.json", "timers.json", "focus.json", "phone.json", "routines.json",
-                   "wisp.log", "sidekick.log", "workspace/MEMORY.md", "telemetry.json", "secrets.bin"}
+                   "wisp.log", "sidekick.log", "workspace/MEMORY.md", "telemetry.json", "secrets.bin", "feedback_outbox.json"}
 PROTECTED_DIRS = {"jobs", "backups", "workspace/projects", "workspace/output", ".venv"}
 # Files from older versions that aren't used any more
 REMOVED_FILES = ["focus_card.py", "jarvis_ui.py", "sidekick.py"]

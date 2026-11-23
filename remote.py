@@ -172,7 +172,8 @@ class PhoneRemote:
                                                "paired": time.strftime("%Y-%m-%d %H:%M")})
         _save_devices(data)
         self.pin = None  # one PIN, one phone
-        self.a.emit("info", f"Phone paired: {name or 'Phone'}.")
+        from i18n import L
+        self.a.emit("info", L(f"Phone paired: {name or 'Phone'}.", f"手机已配对：{name or '手机'}。"))
         return token, None
 
     def check_token(self, token):
@@ -207,7 +208,7 @@ class PhoneRemote:
         a = self.a
         status = "listening" if a.is_listening else ("speaking" if a.is_speaking else
                                                      ("thinking" if a.busy.is_set() else "ready"))
-        items = [{"id": i["id"], "kind": i["kind"], "label": i["label"] or i["kind"].title(),
+        items = [{"id": i["id"], "kind": i["kind"], "label": i["label"] or _kind_name(i["kind"]),
                   "left": max(0, i["due"] - time.time()), "when": timers.say_time(i["due"])}
                  for i in timers.upcoming()[:8]]
         jobs = [{"id": j["id"], "task": j["task"], "status": j["status"], "say": j.get("say", ""),
@@ -252,6 +253,11 @@ class PhoneRemote:
         return True
 
 
+def _kind_name(kind):
+    from i18n import L
+    return {"timer": L("Timer", "计时器"), "alarm": L("Alarm", "闹钟"), "reminder": L("Reminder", "提醒")}.get(kind, kind)
+
+
 class RemoteHandler(BaseHTTPRequestHandler):
     remote = None  # set when the server starts
     server_version = "Wisp"
@@ -293,7 +299,11 @@ class RemoteHandler(BaseHTTPRequestHandler):
         r = self.remote
         if url.path in ("/", "/index.html"):
             try:
-                return self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
+                page = PAGE.read_bytes()
+                import i18n
+                if i18n.LANG == "zh":
+                    page = page.replace(b'<html lang="en">', b'<html lang="zh-CN">', 1)
+                return self._send(200, page, "text/html; charset=utf-8")
             except OSError:
                 return self._send(500, "remote_page.html is missing", "text/plain")
         if url.path == "/manifest.json":
@@ -342,6 +352,13 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 telemetry.feature("phone_remote")
                 r.a.submit(text, source="phone")
             return self._send(200, {"ok": bool(text)})
+        if url.path == "/api/feedback":
+            import feedback
+            message = str(body.get("message", "")).strip()
+            if not message:
+                return self._send(400, {"error": "empty"})
+            result = feedback.send(str(body.get("kind", "idea")), message, body.get("rating"), str(body.get("email", "")))
+            return self._send(200, {"result": result})
         if url.path == "/api/action":
             ok = r.action(str(body.get("action", "")), body.get("value"))
             return self._send(200 if ok else 400, {"ok": ok})

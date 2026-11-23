@@ -20,6 +20,7 @@ import brain
 import context
 import focus
 import routines
+import i18n
 import shortcuts
 import sysplat
 import telemetry
@@ -35,6 +36,7 @@ def load_config():
 
 
 DEFAULT_ACKS = ["One moment.", "Right away.", "On it.", "Just a moment."]
+t = i18n.t
 
 
 def _later(seconds, fn):
@@ -52,6 +54,7 @@ def _same(a, b):
 class Assistant:
     def __init__(self, emit):
         self.cfg = load_config()
+        i18n.load_language()
         self._listeners = [emit]      # the UI, plus the phone remote if it's on
         self.source = "pc"            # where the current request came from: "pc" or "phone"
         self.ui_action = None         # set by the UI, so the phone can e.g. open the HUD
@@ -115,7 +118,7 @@ class Assistant:
     # ---------- start / stop ----------
     def start(self):
         if not brain.write_mcp_config():
-            self.emit("info", "App control (Windows-MCP) isn't installed, so I can't click around in apps. Run setup.bat.")
+            self.emit("info", t("app_control_missing"))
         self.emit("status", "starting")
         telemetry.start(self.cfg)
         threading.Thread(target=self._warm_up, daemon=True).start()
@@ -173,13 +176,13 @@ class Assistant:
         self.speaker.stop()
         if self.busy.is_set():
             self.session.stop()  # restarts automatically on the next request
-            self.emit("info", "Stopped.")
+            self.emit("info", t("stopped"))
 
     def new_chat(self):
         self.session.reset()
         self._save_session()
         threading.Thread(target=self._warm_up, daemon=True).start()
-        self.emit("info", "Started a fresh conversation. (Things saved to memory are kept.)")
+        self.emit("info", t("new_chat"))
 
     def set_muted(self, muted):
         self.muted = muted
@@ -195,7 +198,7 @@ class Assistant:
             text = "in the background " + text[4:]
         self.emit("user", text)
         if self.busy.is_set():
-            self.emit("info", "Queued - I'll do it after the current task.")
+            self.emit("info", t("queued"))
         self.requests.put((text, source))
 
     def _worker(self):
@@ -204,7 +207,7 @@ class Assistant:
             try:
                 self._handle(text)
             except Exception as exc:
-                self.emit("error", f"Error: {exc}")
+                self.emit("error", t("error_generic", error=exc))
                 self.emit("status", "ready")
 
     def _idle_status(self):
@@ -244,7 +247,7 @@ class Assistant:
         self._save_session(last_briefing=today)
         self.pending_offer = ("briefing", time.time() + 90)
         name = self.cfg.get("user_name")
-        self._say(f"Good morning{', ' + name if name else ''}. Would you like your briefing?")
+        self._say(t("briefing_offer", name=(", " if not i18n.is_zh() else "，") + name if name else ""))
 
     def _briefing_prompt(self):
         now = time.localtime()
@@ -273,17 +276,16 @@ class Assistant:
             m = re.search(r"\|(\d{10})\b", raw)
             when = ""
             if m:
-                when = f" It resets at {time.strftime('%I:%M %p', time.localtime(int(m.group(1)))).lstrip('0')}."
+                when = t("usage_limit_when", time=time.strftime("%H:%M", time.localtime(int(m.group(1)))))
             else:
                 m = re.search(r"resets?\s+(?:at\s+)?([0-9:]+\s*[ap]m)", low)
                 if m:
-                    when = f" It resets at {m.group(1)}."
-            return ("You've hit your Claude usage limit, so I can't think for a bit." + when +
-                    " Timers, routines and quick commands still work.")
+                    when = t("usage_limit_when", time=m.group(1))
+            return t("usage_limit", when=when)
         if "not logged in" in low or "login" in low or "authenticat" in low or "/login" in low:
-            return "Claude Code isn't logged in. Open Command Prompt, type claude, and log in again."
+            return t("not_logged_in")
         if "network" in low or "connection" in low or "timed out" in low or "enotfound" in low:
-            return "I couldn't reach Claude. Check your internet connection."
+            return t("no_internet")
         return None
 
     @staticmethod
@@ -312,6 +314,14 @@ class Assistant:
             self.wake.listen_now(self.cfg.get("follow_up_seconds", 6))
         threading.Thread(target=go, daemon=True).start()
 
+    @staticmethod
+    def feedback_request(text):
+        """'I have a suggestion: ...' / 'send feedback ...' -> the feedback text (may be empty), else None."""
+        m = re.match(r"^(?:hey |ok )?(?:jarvis|wisp)?[, ]*(?:i (?:have|want to (?:give|send|leave)|'d like to (?:give|send|leave)) "
+                     r"(?:a |some )?(?:suggestion|feedback|idea for (?:you|wisp))|send (?:some )?feedback|"
+                     r"report a (?:bug|problem)|give feedback|feedback)\b[:,.\s-]*(.*)$", text.strip(), re.IGNORECASE)
+        return m.group(1).strip() if m else None
+
     def background_task_from(self, text):
         lowered = text.lower().strip()
         for prefix in self.cfg.get("background_prefixes", []):
@@ -320,30 +330,48 @@ class Assistant:
         return None
 
     def _handle(self, text):
+        zh = i18n.is_zh()
+        if zh:
+            import lang_zh
+
         # an answer to "Would you like your briefing?"
         offer = getattr(self, "pending_offer", None)
         self.pending_offer = None
         if offer and time.time() < offer[1]:
-            t = re.sub(r"[^a-z ]", "", text.lower()).strip()
-            if re.fullmatch(r"(yes|yeah|yep|yup|sure|ok|okay|please|go ahead|go on|yes please|sure thing|do it|"
-                            r"go for it|absolutely|of course)( please| thanks| thank you)?", t):
+            words = re.sub(r"[^a-z ]", "", text.lower()).strip()
+            said_yes = re.fullmatch(r"(yes|yeah|yep|yup|sure|ok|okay|please|go ahead|go on|yes please|sure thing|"
+                                    r"do it|go for it|absolutely|of course)( please| thanks| thank you)?", words)
+            said_no = re.fullmatch(r"(no|nope|nah|not now|no thanks|no thank you|maybe later|later|skip( it)?)", words)
+            if said_yes or (zh and lang_zh.is_yes(text)):
                 text = self._briefing_prompt()
                 telemetry.feature("briefing")
-            elif re.fullmatch(r"(no|nope|nah|not now|no thanks|no thank you|maybe later|later|skip( it)?)", t):
-                self._say("Very well.")
+            elif said_no or (zh and lang_zh.is_no(text)):
+                self._say(t("very_well"))
                 return
 
+        plain = re.sub(r"[^a-z' ]", "", text.lower()).strip()
         if re.fullmatch(r"(good morning|morning|brief me|(give me )?(my |the )?(morning |daily )?briefing|"
-                        r"what'?s (on )?(my day|today)( looking like)?)", re.sub(r"[^a-z' ]", "", text.lower()).strip()):
+                        r"what'?s (on )?(my day|today)( looking like)?)", plain) or (zh and lang_zh.is_briefing(text)):
             text = self._briefing_prompt()
             telemetry.feature("briefing")
 
         internal = text.startswith("[MORNING BRIEFING]")  # our own prompt: straight to Claude
-        task = None if internal else self.background_task_from(text)
+
+        # "I have a suggestion: ..." -> open the feedback form, filled in (you check it, then press Send)
+        if not internal:
+            feedback_text = self.feedback_request(text) if not zh else (
+                lang_zh.wants_feedback(text) if lang_zh.wants_feedback(text) is not None else self.feedback_request(text))
+            if feedback_text is not None:
+                if self.ui_action:
+                    self.ui_action(("feedback", feedback_text))
+                    self._say(t("feedback_opened"))
+                    return
+
+        task = None if internal else (self.background_task_from(text) or (zh and lang_zh.background_task(text)) or None)
         if task:
             job_id = background.start_job(task)
             telemetry.feature("background_job")
-            self._say(f"Okay, I'm working on that in the background. Job {job_id}.")
+            self._say(t("background_started", job=job_id))
             return
 
         found = None if internal else routines.find(text)
@@ -355,14 +383,21 @@ class Assistant:
             self.emit("status", self._idle_status())
             return
 
+        if not internal and self.cfg.get("instant_shortcuts", True) and zh:
+            quick = lang_zh.handle_command(text)  # Chinese timers, focus, routines list/delete, open apps
+            if quick:
+                telemetry.feature(quick[1])
+                self._say(quick[0])
+                return
+
         if not internal:
             reply = routines.handle_command(text)  # "what routines do I have", "delete the X routine"
             if reply:
                 self._say(reply)
                 return
-            build = routines.builder_prompt(text)  # "when I say X, do Y" -> Claude writes the routine
-            if build:
-                self.emit("tool", "Routine  setting it up")
+            build = routines.builder_prompt(text, force=bool(zh and lang_zh.wants_routine_builder(text)))
+            if build:  # "when I say X, do Y" -> Claude writes the routine
+                self.emit("tool", f"Routine  {t('routine_building')}")
                 telemetry.feature("routine_created")
                 text, internal = build, True
 
@@ -386,7 +421,7 @@ class Assistant:
 
         if self._conversation_expired():
             self.session.reset()
-            self.emit("info", "It's been a while, so I started a fresh conversation. (Memory is kept.)")
+            self.emit("info", t("conversation_reset"))
 
         self.busy.set()
         self.emit("status", "thinking")
@@ -409,10 +444,10 @@ class Assistant:
             self.busy.clear()
         self.last_used = time.time()
         self._save_session()
-        took = f"took {time.time() - started:.1f}s"
+        took = t("took", seconds=f"{time.time() - started:.1f}")
         friendly = self._friendly_error(result) if not result["ok"] else None
         if friendly or not result["text"]:
-            message = friendly or "Something went wrong, sorry. The details are in wisp.log."
+            message = friendly or t("something_wrong")
             print(f"(Claude error: {result.get('error')} | {result.get('text', '')[:500]})")
             self.emit("error", message)
             if not self.muted and self._speak_here():
@@ -468,24 +503,24 @@ class Assistant:
     def _start_voice(self):
         try:
             from voice import Recorder, Transcriber
-            self.emit("info", f"Loading speech model '{self.cfg['whisper_model']}' (the first run downloads it)...")
-            self._transcriber = Transcriber(self.cfg["whisper_model"])
+            self.emit("info", t("loading_speech", model=self.cfg["whisper_model"]))
+            self._transcriber = Transcriber(self.cfg["whisper_model"], i18n.LANG)
             self._recorder = Recorder()
         except Exception as exc:
-            self.emit("info", f"Voice is off ({exc}). You can still type.")
+            self.emit("info", t("voice_off", error=exc))
             self.emit("voice", "off")
             return
         self.voice_ready = True
         self.emit("voice", "on")
-        self.speaker.precache(self.cfg.get("thinking_acks", DEFAULT_ACKS) + ["Yes?", "Didn't catch that."])
+        self.speaker.precache(self.cfg.get("thinking_acks", DEFAULT_ACKS) + [t("yes"), t("didnt_catch")])
         try:
             import hotkeys
             talk_key = self.cfg.get("talk_key", "f9")
             hotkeys.on_hold(talk_key, lambda: self.hotkeys_active and self.start_listening(), self.stop_listening)
             hotkeys.add_hotkey(self.cfg.get("stop_key", "f10"), self.stop)
-            self.emit("info", f"Voice ready: hold {hotkeys.label(talk_key)} (or click the orb) to talk.")
+            self.emit("info", t("voice_ready", key=hotkeys.label(talk_key)))
         except Exception as exc:
-            self.emit("info", f"Hotkeys are off ({exc}). Use the mic button instead.")
+            self.emit("info", t("hotkeys_off", error=exc))
         self._start_wake_word()
 
     def _start_wake_word(self):
@@ -504,13 +539,13 @@ class Assistant:
             listener.load()
             listener.start()
         except ImportError:
-            self.emit("info", "Wake word is off: run  py -V:3.13 -m pip install openwakeword")
+            self.emit("info", t("wake_missing"))
             return
         except Exception as exc:
-            self.emit("info", f"Wake word is off ({exc}).")
+            self.emit("info", t("wake_off", error=exc))
             return
         self.wake = listener
-        self.emit("info", f"Say \u201c{name.replace('_', ' ').title()}\u201d any time to talk.")
+        self.emit("info", t("wake_ready", phrase=name.replace("_", " ").title()))
 
     def _on_wake(self):
         telemetry.feature("wake_word")
@@ -552,6 +587,6 @@ class Assistant:
             if text:
                 self.submit(text)
             else:
-                self.emit("info", "Didn't catch that.")
+                self.emit("info", t("didnt_catch"))
                 self.emit("status", "thinking" if self.busy.is_set() else "ready")
         threading.Thread(target=transcribe, daemon=True).start()

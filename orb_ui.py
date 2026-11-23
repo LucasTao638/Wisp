@@ -18,6 +18,8 @@ import autostart
 import background
 import remote
 import updates
+import i18n
+from i18n import L, t
 from app_info import APP_NAME
 from context import hide_from_screenshots
 import classic_ui  # reuses its jobs window
@@ -41,8 +43,7 @@ RED = "#ff6b6b"
 
 AMBER_TEXT = "#ffb547"
 FIELD_BG = "#121820"
-STATUS_WORDS = {"starting": "INITIALISING", "ready": "ONLINE", "listening": "LISTENING",
-                "thinking": "PROCESSING", "speaking": "SPEAKING"}
+STATUS_WORDS = {s: f"status_{s}" for s in ("starting", "ready", "listening", "thinking", "speaking")}
 
 
 def _key_label(key):
@@ -76,7 +77,7 @@ class OrbApp:
         self.accent = self.cfg.get("accent_colour", "#38d6ff")
         self.status = "starting"
         import hotkeys
-        self.caption = f"Click the orb or hold {hotkeys.label(self.cfg.get('talk_key', 'f9'))} to talk."
+        self.caption = t("click_to_talk", key=hotkeys.label(self.cfg.get("talk_key", "f9")))
         self.step = ""
         self.log = []                  # everything that's happened, for the conversation window
         self.transcript = None
@@ -142,6 +143,10 @@ class OrbApp:
         self.update_info = None
         self.updater = updates.UpdateChecker(lambda info: self.events.put(("ui_update", info)))
         self.updater.start()
+        import feedback
+        feedback.retry_outbox()  # anything written while offline
+        if feedback.maybe_nudge():  # once, after a week of use: "how's it going?"
+            self.root.after(15000, lambda: setattr(self, "caption", t("fb_nudge")))
         try:
             autostart.migrate()  # old "Sidekick" startup shortcut -> "Wisp"
         except Exception:
@@ -188,7 +193,7 @@ class OrbApp:
         if not self.entry.get():
             self.placeholder = True
             self.entry.config(fg=DIM)
-            self.entry.insert(0, "Type a command…")
+            self.entry.insert(0, t("type_placeholder"))
 
     def _clear_placeholder(self, _=None):
         if self.placeholder:
@@ -214,36 +219,37 @@ class OrbApp:
             self.root.attributes("-topmost", on)
 
         items = [
-            *([{"label": f"Update now to {self.update_info['version']}", "command": self.install_update}]
+            *([{"label": t("menu_update", version=self.update_info["version"]), "command": self.install_update}]
               if self.update_info else []),
-            {"label": "Settings", "command": self.show_settings},
-            {"label": "Open full HUD", "command": self.overlay.open,
+            {"label": t("menu_settings"), "command": self.show_settings},
+            {"label": t("menu_hud"), "command": self.overlay.open,
              "hint": _key_label(self.cfg.get("hud_key", "ctrl+shift+j"))},
-            {"label": "Show conversation", "command": self.show_transcript},
-            {"label": "Connect phone", "command": self.show_phone_window},
-            {"label": "Routines", "command": self.show_routines},
-            {"label": "Background jobs", "command": self.show_jobs},
-            {"label": "New chat", "command": a.new_chat},
+            {"label": t("menu_conversation"), "command": self.show_transcript},
+            {"label": t("menu_phone"), "command": self.show_phone_window},
+            {"label": t("menu_routines"), "command": self.show_routines},
+            {"label": t("menu_feedback"), "command": self.show_feedback},
+            {"label": t("menu_jobs"), "command": self.show_jobs},
+            {"label": t("menu_new_chat"), "command": a.new_chat},
             {"sep": True},
-            {"label": "Mute voice", "toggle": (lambda: a.muted, a.set_muted)},
+            {"label": t("menu_mute"), "toggle": (lambda: a.muted, a.set_muted)},
         ]
         if a.wake:
-            items.append({"label": f"Listen for \u201c{wake_name}\u201d",
+            items.append({"label": t("menu_listen_for", phrase=wake_name),
                           "toggle": (lambda: a.wake_enabled, lambda on: setattr(a, "wake_enabled", on))})
         items += [
-            {"label": "Always on top", "toggle": (lambda: self.on_top, set_on_top)},
+            {"label": t("menu_on_top"), "toggle": (lambda: self.on_top, set_on_top)},
         ]
         if sys.platform == "win32":
-            items.append({"label": "Start with Windows", "toggle": (autostart.is_enabled, autostart.set_enabled)})
+            items.append({"label": t("menu_autostart"), "toggle": (autostart.is_enabled, autostart.set_enabled)})
         items += [
             {"sep": True},
-            {"label": "Stop", "command": a.stop, "hint": "Esc"},
-            {"label": "Move back to corner", "command": self.to_corner},
-            {"label": "Open log (for problems)", "command": self.open_log},
-            {"label": "Hide", "command": self.hide,
+            {"label": t("menu_stop"), "command": a.stop, "hint": "Esc"},
+            {"label": t("menu_corner"), "command": self.to_corner},
+            {"label": t("menu_log"), "command": self.open_log},
+            {"label": t("menu_hide"), "command": self.hide,
              "hint": _key_label(self.cfg.get("show_hide_key", ""))},
             {"sep": True},
-            {"label": "Quit Wisp", "command": self.quit, "danger": True},
+            {"label": t("menu_quit"), "command": self.quit, "danger": True},
         ]
         self.popup = HudMenu(self.root, items, x, y, self.accent, self.f_body, self.f_small, self.s,
                              panel=PANEL, text=TEXT, dim=DIM, danger=RED)
@@ -275,7 +281,7 @@ class OrbApp:
             if self.voice_on:
                 self.assistant.toggle_listening()
             else:
-                self.caption = "Voice isn't available - type a command below."
+                self.caption = L("Voice isn't available - type a command below.", "语音不可用，请在下方输入指令。")
 
     def _double_click(self, e):
         if e.y > 340 * self.s:
@@ -294,11 +300,12 @@ class OrbApp:
                     continue
                 if kind == "ui_update":
                     self.update_info = text
-                    self.caption = f"{APP_NAME} {text['version']} is available. Right-click the orb > Update now."
-                    background.notify(APP_NAME, f"Version {text['version']} is available. Right-click the orb to update.")
+                    self.caption = t("update_available", app=APP_NAME, version=text["version"])
+                    background.notify(APP_NAME, L(f"Version {text['version']} is available. Right-click the orb to update.",
+                                                  f"新版本 {text['version']} 可用。右键点击光球即可更新。"))
                     continue
                 if kind == "wake":
-                    self.caption = "Yes?"
+                    self.caption = t("yes")
                     if self._full_hud_allowed():
                         self.overlay.open()
                     elif self.hidden and not self.auto_hidden:
@@ -350,12 +357,7 @@ class OrbApp:
     def _friendly_step(step):
         name, _, detail = step.partition("  ")
         name = re.sub(r"^mcp__windows-mcp__", "", name)
-        words = {"WebSearch": "Searching the web", "WebFetch": "Reading", "Bash": "Running",
-                 "PowerShell": "Running", "Read": "Reading", "Write": "Writing", "Edit": "Editing",
-                 "Glob": "Finding files", "Grep": "Searching files", "TodoWrite": "Planning",
-                 "Task": "Delegating", "App": "Opening app", "Click": "Clicking", "Type": "Typing",
-                 "Snapshot": "Looking at the screen", "Screenshot": "Looking at the screen"}
-        label = words.get(name, name)
+        label = t(f"step_{name}") if not t(f"step_{name}").startswith("step_") else name
         return f"{label}: {detail}" if detail else label
 
     # ---------- the orb ----------
@@ -369,7 +371,7 @@ class OrbApp:
             status, colour = self.status, self.accent
 
         # text
-        word = STATUS_WORDS.get(status, "ONLINE")
+        word = t(STATUS_WORDS.get(status, "status_ready"))
         if status in ("thinking", "starting"):
             word += "." * (int(t * 2.5) % 4)
         c.itemconfig(self.status_id, text="  ".join(word), fill=colour)
@@ -539,16 +541,17 @@ class OrbApp:
             return
         post = lambda action: (lambda icon=None, item=None: self.events.put(("ui", action)))
         menu = pystray.Menu(
-            pystray.MenuItem("Show / hide", post("toggle"), default=True),
-            pystray.MenuItem("Open full HUD", post("hud")),
-            pystray.MenuItem("Settings", post("settings")),
-            pystray.MenuItem("Connect phone", post("phone")),
-            pystray.MenuItem("Talk", post("talk")),
-            pystray.MenuItem("New chat", post("new_chat")),
-            pystray.MenuItem("Background jobs", post("jobs")),
-            pystray.MenuItem("Move back to corner", post("corner")),
+            pystray.MenuItem(t("tray_show_hide"), post("toggle"), default=True),
+            pystray.MenuItem(t("menu_hud"), post("hud")),
+            pystray.MenuItem(t("menu_settings"), post("settings")),
+            pystray.MenuItem(t("menu_phone"), post("phone")),
+            pystray.MenuItem(t("tray_talk"), post("talk")),
+            pystray.MenuItem(t("menu_new_chat"), post("new_chat")),
+            pystray.MenuItem(t("menu_jobs"), post("jobs")),
+            pystray.MenuItem(t("menu_corner"), post("corner")),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Quit Wisp", post("quit")),
+            pystray.MenuItem(t("menu_feedback"), post("feedback")),
+            pystray.MenuItem(t("menu_quit"), post("quit")),
         )
         try:
             self.tray = pystray.Icon("Wisp", self._tray_image(), "Wisp", menu)
@@ -558,7 +561,12 @@ class OrbApp:
             print(f"(tray icon off: {exc})")
 
     def _ui_action(self, action):
-        if action == "toggle":
+        if isinstance(action, tuple) and action[0] == "feedback":  # "I have a suggestion: ..."
+            self.show_feedback(action[1])
+            return
+        if action == "feedback":
+            self.show_feedback()
+        elif action == "toggle":
             self.toggle()
         elif action == "talk":
             self.show()
@@ -634,7 +642,7 @@ class OrbApp:
             self.transcript.lift()
             return
         win = self.transcript = tk.Toplevel(self.root, bg=PANEL)
-        win.title("Wisp - conversation")
+        win.title(L("Wisp - conversation", "Wisp - 对话记录"))
         win.geometry(f"{int(480 * self.s)}x{int(560 * self.s)}")
         text = tk.Text(win, bg=PANEL, fg=TEXT, wrap="word", bd=0, padx=16, pady=12,
                        highlightthickness=0, font=self.f_body)
@@ -652,7 +660,7 @@ class OrbApp:
         if not (self.transcript and self.transcript.winfo_exists()) or kind in ("status", "voice"):
             return
         text = self.transcript_text
-        line = {"user": f"You: {item}", "tool": f"› {item}", "reply": clean_markdown(item),
+        line = {"user": L(f"You: {item}", f"你：{item}"), "tool": f"› {item}", "reply": clean_markdown(item),
                 "say": item}.get(kind, item)
         text.config(state="normal")
         text.insert("end", line + "\n", {"user": "you"}.get(kind, kind))
@@ -669,27 +677,29 @@ class OrbApp:
         pin = self.remote.new_pin()
         s = self.s
         win = self.phone_window = tk.Toplevel(self.root, bg=PANEL)
-        win.title("Wisp - connect phone")
+        win.title(L("Wisp - connect phone", "Wisp - 连接手机"))
         win.attributes("-topmost", True)
         win.geometry(f"{int(460 * s)}x{int(500 * s)}")
         accent = self.accent
-        title = tk.Label(win, text="C O N N E C T   P H O N E", bg=PANEL, fg=accent, font=self.f_title)
+        title = tk.Label(win, text=L("C O N N E C T   P H O N E", "连 接 手 机"), bg=PANEL, fg=accent, font=self.f_title)
         title.pack(pady=(int(22 * s), int(6 * s)))
-        tk.Label(win, text="On your phone (same Wi-Fi), open this in the browser:", bg=PANEL, fg=DIM,
+        tk.Label(win, text=L("On your phone (same Wi-Fi), open this in the browser:", "在手机上（同一 Wi-Fi）用浏览器打开："), bg=PANEL, fg=DIM,
                  font=self.f_small).pack()
         addresses = remote.local_addresses(self.remote.port)
         for i, addr in enumerate(addresses[:3]):
             tk.Label(win, text=addr, bg=PANEL, fg=TEXT if i == 0 else DIM,
                      font=(self.f_title.actual("family"), 16 if i == 0 else 11, "bold")).pack(pady=(int(8 * s), 0))
-        tk.Label(win, text="then type this PIN:", bg=PANEL, fg=DIM, font=self.f_small).pack(pady=(int(18 * s), 0))
+        tk.Label(win, text=L("then type this PIN:", "然后输入这个 PIN 码："), bg=PANEL, fg=DIM, font=self.f_small).pack(pady=(int(18 * s), 0))
         tk.Label(win, text=f"{pin[:3]} {pin[3:]}", bg=PANEL, fg=accent,
                  font=(self.f_title.actual("family"), 40, "bold")).pack()
         expiry = tk.Label(win, text="", bg=PANEL, fg=DIM, font=self.f_small)
         expiry.pack()
         devices = tk.Label(win, text="", bg=PANEL, fg=DIM, font=self.f_small)
         devices.pack(pady=(int(14 * s), 0))
-        tip = ("Tip: in your phone's browser, choose \u201cAdd to Home Screen\u201d to use it like an app.\n"
-               "Away from home? Install Tailscale (free) on both, then use the 100.x address.")
+        tip = L("Tip: in your phone's browser, choose \u201cAdd to Home Screen\u201d to use it like an app.\n"
+                "Away from home? Install Tailscale (free) on both, then use the 100.x address.",
+                "提示：在手机浏览器中选择“添加到主屏幕”，就能像应用一样使用。\n"
+                "不在家？在电脑和手机上都安装 Tailscale（免费），然后使用 100.x 开头的地址。")
         tk.Label(win, text=tip, bg=PANEL, fg=DIM, font=self.f_small, justify="center",
                  wraplength=int(410 * s)).pack(pady=(int(10 * s), 0))
         row = tk.Frame(win, bg=PANEL)
@@ -703,10 +713,10 @@ class OrbApp:
             remote.set_enabled(False)
             self.remote.stop()
             win.destroy()
-            self.caption = "Phone remote is off."
-        classic_ui.FlatButton(row, "Forget all phones", forget, font=self.f_small).pack(side="left", padx=4)
-        classic_ui.FlatButton(row, "Turn off phone remote", turn_off, font=self.f_small).pack(side="left", padx=4)
-        classic_ui.FlatButton(row, "Done", win.destroy, bg=accent, fg="#031018", hover=accent,
+            self.caption = L("Phone remote is off.", "手机遥控已关闭。")
+        classic_ui.FlatButton(row, L("Forget all phones", "忘记所有手机"), forget, font=self.f_small).pack(side="left", padx=4)
+        classic_ui.FlatButton(row, L("Turn off phone remote", "关闭手机遥控"), turn_off, font=self.f_small).pack(side="left", padx=4)
+        classic_ui.FlatButton(row, L("Done", "完成"), win.destroy, bg=accent, fg="#031018", hover=accent,
                               font=self.f_small).pack(side="left", padx=4)
 
         def update():
@@ -714,15 +724,16 @@ class OrbApp:
                 return
             left = self.remote.pin_expires - time.time()
             if self.remote.pin and left > 0:
-                expiry.config(text=f"PIN works for {int(left // 60)}:{int(left % 60):02d}", fg=DIM)
+                expiry.config(text=L("PIN works for ", "PIN 码剩余有效时间 ") + f"{int(left // 60)}:{int(left % 60):02d}", fg=DIM)
             else:
-                expiry.config(text="PIN used or expired - reopen this window for a new one", fg=AMBER_TEXT)
+                expiry.config(text=L("PIN used or expired - reopen this window for a new one", "PIN 码已使用或已过期，请重新打开此窗口获取新的"), fg=AMBER_TEXT)
             n = remote.paired_count()
-            devices.config(text=f"{n} phone{'s' if n != 1 else ''} paired" if n else "No phones paired yet")
+            devices.config(text=(L(f"{n} phone{'s' if n != 1 else ''} paired", f"已配对 {n} 部手机") if n
+                                else L("No phones paired yet", "尚未配对手机")))
             win.after(1000, update)
         update()
         if not addresses:
-            expiry.config(text="Couldn't find this PC's network address - is it connected to Wi-Fi?")
+            expiry.config(text=L("Couldn't find this computer's network address - is it connected to Wi-Fi?", "找不到这台电脑的网络地址，是否已连接 Wi-Fi？"))
 
     def show_routines(self):
         """Your routines in plain English, with Run / Delete. New ones: just tell Wisp "when I say X, do Y"."""
@@ -732,19 +743,21 @@ class OrbApp:
             return
         s = self.s
         win = self.routines_window = tk.Toplevel(self.root, bg=PANEL)
-        win.title("Wisp - routines")
+        win.title(L("Wisp - routines", "Wisp - 例程"))
         win.geometry(f"{int(560 * s)}x{int(620 * s)}")
-        tk.Label(win, text="R O U T I N E S", bg=PANEL, fg=self.accent, font=self.f_title).pack(pady=(int(18 * s), 2))
-        tk.Label(win, text='To add one, just tell Wisp:  \u201cwhen I say movie night, open Netflix and turn the volume down\u201d\n'
-                           'To change one:  \u201cadd Spotify to my gaming mode routine\u201d',
+        tk.Label(win, text=L("R O U T I N E S", "例  程"), bg=PANEL, fg=self.accent, font=self.f_title).pack(pady=(int(18 * s), 2))
+        tk.Label(win, text=L('To add one, just tell Wisp:  \u201cwhen I say movie night, open Netflix and turn the volume down\u201d\n'
+                             'To change one:  \u201cadd Spotify to my gaming mode routine\u201d',
+                             '添加例程，直接对 Wisp 说：“当我说电影之夜的时候，打开网飞并把音量调低”\n'
+                             '修改例程：“把 Spotify 加到我的游戏模式例程里”'),
                  bg=PANEL, fg=DIM, font=self.f_small, justify="center").pack(pady=(0, int(10 * s)))
         body = tk.Frame(win, bg=PANEL)
         body.pack(fill="both", expand=True, padx=int(16 * s))
         bottom = tk.Frame(win, bg=PANEL)
         bottom.pack(fill="x", padx=int(16 * s), pady=int(12 * s))
-        classic_ui.FlatButton(bottom, "Edit the file (advanced)", lambda: self._open_file(routines.FILE),
+        classic_ui.FlatButton(bottom, L("Edit the file (advanced)", "编辑文件（高级）"), lambda: self._open_file(routines.FILE),
                               font=self.f_small).pack(side="left")
-        classic_ui.FlatButton(bottom, "Close", win.destroy, bg=self.accent, fg="#031018", hover=self.accent,
+        classic_ui.FlatButton(bottom, L("Close", "关闭"), win.destroy, bg=self.accent, fg="#031018", hover=self.accent,
                               font=self.f_small).pack(side="right")
         state = {"mtime": None}
 
@@ -762,23 +775,26 @@ class OrbApp:
                 w.destroy()
             data = routines.load()
             if not data:
-                tk.Label(body, text="No routines yet.", bg=PANEL, fg=DIM, font=self.f_body).pack(pady=20)
+                tk.Label(body, text=L("No routines yet.", "还没有例程。"), bg=PANEL, fg=DIM, font=self.f_body).pack(pady=20)
             for name, r in data.items():
                 card = tk.Frame(body, bg=FIELD_BG, padx=int(14 * s), pady=int(10 * s))
                 card.pack(fill="x", pady=int(5 * s))
                 top = tk.Frame(card, bg=FIELD_BG)
                 top.pack(fill="x")
                 tk.Label(top, text=name.title(), bg=FIELD_BG, fg=self.accent, font=self.f_title).pack(side="left")
-                classic_ui.FlatButton(top, "Delete", lambda n=name: delete(n), bg=FIELD_BG, font=self.f_small).pack(side="right")
-                classic_ui.FlatButton(top, "Run", lambda n=name: run(n), bg=FIELD_BG, font=self.f_small).pack(side="right", padx=4)
-                triggers = " / ".join(f"\u201c{t}\u201d" for t in (r.get("triggers") or [name])[:4])
-                tk.Label(card, text=f"Say {triggers}", bg=FIELD_BG, fg=DIM, font=self.f_small, anchor="w",
+                classic_ui.FlatButton(top, L("Delete", "删除"), lambda n=name: delete(n), bg=FIELD_BG, font=self.f_small).pack(side="right")
+                classic_ui.FlatButton(top, L("Run", "运行"), lambda n=name: run(n), bg=FIELD_BG, font=self.f_small).pack(side="right", padx=4)
+                phrases = r.get("triggers") or [name]
+                if i18n.is_zh():  # show the Chinese phrases first
+                    phrases = sorted(phrases, key=lambda p: not any("\u4e00" <= ch <= "\u9fff" for ch in p))
+                triggers = " / ".join(f"\u201c{trig}\u201d" for trig in phrases[:4])
+                tk.Label(card, text=L(f"Say {triggers}", f"说 {triggers}"), bg=FIELD_BG, fg=DIM, font=self.f_small, anchor="w",
                          justify="left", wraplength=int(480 * s)).pack(fill="x", pady=(4, 0))
-                tk.Label(card, text=(lambda d: d[:1].upper() + d[1:])(routines.describe(r)) + ".", bg=FIELD_BG, fg=TEXT, font=self.f_small,
+                tk.Label(card, text=(lambda d: d[:1].upper() + d[1:])(routines.describe(r)) + L(".", "。"), bg=FIELD_BG, fg=TEXT, font=self.f_small,
                          anchor="w", justify="left", wraplength=int(480 * s)).pack(fill="x", pady=(2, 0))
             problems = routines.check()
             if problems:
-                tk.Label(body, text="Problem: " + problems[0], bg=PANEL, fg=RED, font=self.f_small,
+                tk.Label(body, text=L("Problem: ", "问题：") + problems[0], bg=PANEL, fg=RED, font=self.f_small,
                          wraplength=int(480 * s)).pack(pady=6)
 
         def watch():  # refresh when the file changes (e.g. after Wisp adds a routine)
@@ -811,6 +827,10 @@ class OrbApp:
     def show_jobs(self):
         classic_ui.WispApp.show_jobs(self)  # same jobs window as the classic look
 
+    def show_feedback(self, prefill=""):
+        import feedback
+        feedback.FeedbackWindow(self.root, prefill, self.accent)
+
     def show_settings(self):
         from settings_ui import SettingsWindow
         if getattr(self, "settings_window", None) and self.settings_window.win.winfo_exists():
@@ -825,7 +845,7 @@ class OrbApp:
             try:
                 started = updates.install(info, on_progress=lambda m: setattr(self, "caption", m))
             except Exception as exc:
-                self.caption = f"Update failed: {exc}"
+                self.caption = L(f"Update failed: {exc}", f"更新失败：{exc}")
                 return
             if started:
                 self.events.put(("ui", "quit"))

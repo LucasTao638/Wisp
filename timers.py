@@ -87,7 +87,15 @@ def clock(seconds):
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
+def _zh():
+    import i18n
+    return i18n.is_zh()
+
+
 def say_time(ts):
+    if _zh():
+        import lang_zh
+        return lang_zh.say_time(ts)
     t = dt.datetime.fromtimestamp(ts)
     text = t.strftime("%I:%M %p").lstrip("0").replace(":00 ", " ").lower()
     if t.date() != dt.date.today():
@@ -96,6 +104,9 @@ def say_time(ts):
 
 
 def describe(item):
+    if _zh():
+        import lang_zh
+        return lang_zh.describe(item)
     name = item["label"] or {"timer": "timer", "alarm": "alarm", "reminder": "reminder"}[item["kind"]]
     left = item["due"] - time.time()
     if item["kind"] == "timer":
@@ -269,6 +280,9 @@ class TimerService:
 
 
 def fired_message(item):
+    if _zh():
+        import lang_zh
+        return lang_zh.fired_message(item)
     late = item.get("late", 0) > 90
     if item["kind"] == "alarm":
         return f"It's {say_time(item['due'])}. This is your alarm." + (" Sorry, I wasn't running when it was due." if late else "")

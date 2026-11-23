@@ -62,6 +62,18 @@ Good early signals: week-1 retention above ~20% is decent for a free desktop too
 
 ---
 
+## Reading feedback
+
+Feedback arrives in the same PostHog project as the stats:
+
+- **Activity → Events**, filter by event = `feedback_submitted`. Click an event to see `kind` (idea / problem / praise / other), `message`, and, if the person added them, `rating`, `email` and `log`.
+- For an inbox-style view: **Product analytics → New insight → SQL** and run
+  `select timestamp, properties.kind, properties.rating, properties.message, properties.email, properties.app_version, properties.language from events where event = 'feedback_submitted' order by timestamp desc`
+- Save that as a dashboard tile, or set up an **Alert / Destination** (e.g. to email or Discord) on `feedback_submitted` so you hear about it straight away.
+- People who choose "Post on GitHub instead" open a normal GitHub issue with the `feedback`, `enhancement` or `bug` label.
+
+Everything here is something the person wrote and chose to send; treat emails as private and don't publish messages without asking.
+
 ## The Mac version
 - It's the same code: anything specific to Windows or Mac lives in `sysplat.py` (opening apps, sounds, clipboard, media keys…), `hotkeys.py` and `credentials.py`. Fix a Mac-only problem there.
 - It's labelled **beta** because it hasn't been tested on many Macs yet. Before you announce it, ask someone with a Mac to run the one-line install and try: talking (hold Right Option), the wake phrase, a timer, "what's on my screen?", the full HUD (Ctrl+Option+J) and the phone remote. Bug reports from Mac users are the fastest way to get it out of beta.

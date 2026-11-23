@@ -12,3 +12,5 @@
 - Setup screen, Settings window, encrypted API key storage
 - Automatic update checks with one-click updates
 - Anonymous usage stats (on by default, can be turned off; see PRIVACY.md)
+- **Chinese (Simplified)**: speak and get answers in Chinese, Chinese voices, Chinese quick commands (timers, reminders, focus, opening apps and sites, routines), and a translated interface. Choose it at setup or in Settings > Language
+- **Feedback**: send ideas or bug reports from the menu, the phone app, or by voice ("I have a suggestion…" / "我有个建议……"), with optional rating, email and log; works offline and retries later
