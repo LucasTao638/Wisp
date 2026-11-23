@@ -13,8 +13,9 @@ import tempfile
 import threading
 import time
 
+import sysplat
+
 SAMPLE_RATE = 16000
-NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
 class Recorder:
@@ -171,23 +172,6 @@ def strip_wake_words(text):
 
 
 # ---------------- speaking ----------------
-_PS_SPEAK = (
-    "Add-Type -AssemblyName System.Speech;"
-    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;"
-    "$s.Rate = {rate};"
-    "{select}"
-    "$s.Speak([Console]::In.ReadToEnd())"
-)
-
-
-def _mci(command):
-    """Windows' built-in audio player (plays mp3 with no extra installs)."""
-    import ctypes
-    buf = ctypes.create_unicode_buffer(256)
-    ctypes.windll.winmm.mciSendStringW(command, buf, 255, 0)
-    return buf.value
-
-
 class Speaker:
     """Text-to-speech that can be cut off at any time with stop().
 
@@ -201,7 +185,8 @@ class Speaker:
         self.edge_voice = cfg.get("edge_voice", "en-GB-RyanNeural")
         self.edge_rate = cfg.get("edge_rate", "+0%")
         self.edge_pitch = cfg.get("edge_pitch", "+0Hz")
-        self.windows_voice = cfg.get("windows_voice", "")
+        # the offline fallback voice: a Windows SAPI voice name, or a macOS 'say' voice (e.g. "Daniel")
+        self.system_voice = cfg.get("mac_voice" if sysplat.IS_MAC else "windows_voice", "Daniel" if sysplat.IS_MAC else "")
         self.windows_rate = int(cfg.get("voice_rate", 1))
         self.speaking = False
         self._generation = 0
@@ -223,11 +208,11 @@ class Speaker:
             if gen != self._generation:
                 continue
             finished = False
-            if text and sys.platform == "win32":
+            if text and (sysplat.IS_WIN or sysplat.IS_MAC):
                 self.speaking = True
                 try:
                     finished = (self.engine == "edge" and self._speak_edge(text, gen)) \
-                        or (gen == self._generation and self._speak_windows(text, gen))
+                        or (gen == self._generation and self._speak_system(text, gen))
                 except Exception as exc:
                     print(f"(voice error: {exc})")
                 self.speaking = False
@@ -241,7 +226,7 @@ class Speaker:
 
     def precache(self, phrases):
         """Prepare common phrases in the background so they play instantly later."""
-        if self.engine != "edge" or sys.platform != "win32":
+        if self.engine != "edge" or not (sysplat.IS_WIN or sysplat.IS_MAC):
             return
 
         def run():
@@ -325,23 +310,17 @@ class Speaker:
         return True
 
     def _play(self, path, gen):
-        alias = f"sk{gen}_{int(time.time() * 1000) % 100000}"
-        _mci(f'open "{path}" type mpegvideo alias {alias}')
-        _mci(f"play {alias}")
-        time.sleep(0.05)
-        while gen == self._generation and _mci(f"status {alias} mode") == "playing":
-            time.sleep(0.03)
-        _mci(f"stop {alias}")
-        _mci(f"close {alias}")
+        sysplat.AudioPlayer(path).play(lambda: gen != self._generation)
 
-    def _speak_windows(self, text, gen):
-        select = f"try {{ $s.SelectVoice('{self.windows_voice}') }} catch {{}};" if self.windows_voice else ""
-        proc = subprocess.Popen(
-            ["powershell", "-NoProfile", "-Command", _PS_SPEAK.format(rate=self.windows_rate, select=select)],
-            stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            text=True, encoding="utf-8", creationflags=NO_WINDOW)
-        proc.stdin.write(text)
-        proc.stdin.close()
+    def _speak_system(self, text, gen):
+        """The built-in offline voice (Windows SAPI / macOS say)."""
+        cmd, stdin_text = sysplat.system_voice_command(text, self.system_voice, self.windows_rate)
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE if stdin_text else subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+                                creationflags=sysplat.NO_WINDOW)
+        if stdin_text:
+            proc.stdin.write(stdin_text)
+            proc.stdin.close()
         while proc.poll() is None:
             if gen != self._generation:
                 proc.kill()
@@ -358,6 +337,6 @@ if __name__ == "__main__":
     done = threading.Event()
     s = Speaker(config)
     print(f"Speaking with {config.get('voice_engine')} voice "
-          f"{config.get('edge_voice') if config.get('voice_engine', 'edge') == 'edge' else config.get('windows_voice') or 'default'}...")
+          f"{config.get('edge_voice') if config.get('voice_engine', 'edge') == 'edge' else (config.get('mac_voice', 'Daniel') if sysplat.IS_MAC else config.get('windows_voice')) or 'default'}...")
     s.speak(sample, on_done=done.set)
     done.wait(60)

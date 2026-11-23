@@ -1,6 +1,7 @@
-"""Start Wisp automatically when you log in to Windows (it starts hidden in the tray).
+"""Start Wisp automatically when you log in (it starts hidden).
 
-Works by putting a shortcut in your Startup folder. Also usable from Command Prompt:
+Windows: a shortcut in your Startup folder. Mac: a LaunchAgent in ~/Library/LaunchAgents.
+Also usable from a terminal:
     py -V:3.13 autostart.py on     |     py -V:3.13 autostart.py off
 """
 import os
@@ -20,11 +21,15 @@ OLD_SHORTCUT = _startup_folder() / "Sidekick.lnk"  # from before the rename
 
 
 def is_enabled():
+    if sys.platform == "darwin":
+        return PLIST.exists()
     return SHORTCUT.exists() or OLD_SHORTCUT.exists()
 
 
 def migrate():
     """Replace the old Sidekick startup shortcut with a Wisp one."""
+    if sys.platform != "win32":
+        return
     if OLD_SHORTCUT.exists():
         try:
             OLD_SHORTCUT.unlink()
@@ -63,7 +68,44 @@ def disable():
 
 
 def set_enabled(on):
+    if sys.platform == "darwin":
+        return _mac_enable() if on else _mac_disable()
     return enable() if on else disable()
+
+
+# ---------- macOS ----------
+PLIST = Path.home() / "Library" / "LaunchAgents" / "com.wisp.assistant.plist"
+
+
+def _mac_program_args():
+    import sysplat
+    if Path(sysplat.MAC_APP).is_dir():  # start through Wisp.app so its permissions apply
+        parts = ["/usr/bin/open", "-a", sysplat.MAC_APP, "--args", "--startup"]
+    else:
+        parts = [sys.executable, str(ROOT / "app.py"), "--startup"]
+    return "".join(f"<string>{p}</string>" for p in parts)
+
+
+def _mac_enable():
+    PLIST.parent.mkdir(parents=True, exist_ok=True)
+    PLIST.write_text(f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.wisp.assistant</string>
+  <key>ProgramArguments</key><array>
+    {_mac_program_args()}
+  </array>
+  <key>WorkingDirectory</key><string>{ROOT}</string>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Interactive</string>
+</dict></plist>
+""", encoding="utf-8")
+    return True
+
+
+def _mac_disable():
+    PLIST.unlink(missing_ok=True)
+    return True
 
 
 if __name__ == "__main__":

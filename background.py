@@ -4,12 +4,12 @@ Each job gets jobs/<id>.json (status + result) and jobs/<id>.log (live progress)
 You get a Windows notification when a job finishes.
 """
 import json
-import subprocess
 import sys
 import time
 from pathlib import Path
 
 import brain
+import sysplat
 
 ROOT = Path(__file__).resolve().parent
 JOBS = ROOT / "jobs"
@@ -22,9 +22,6 @@ BACKGROUND_NOTE = (
     "output folder unless the task says where. Finish with a short summary and a SAY: line.\n\n"
     "Task: "
 )
-
-DETACHED = 0x00000008 | 0x00000200 | 0x08000000  # DETACHED_PROCESS | NEW_PROCESS_GROUP | NO_WINDOW
-
 
 def _path(job_id, ext="json"):
     return JOBS / f"{job_id}.{ext}"
@@ -42,10 +39,7 @@ def start_job(task):
     job_id = time.strftime("%Y%m%d-%H%M%S")
     _save({"id": job_id, "task": task, "status": "queued",
            "started": time.strftime("%Y-%m-%d %H:%M:%S")})
-    kwargs = {"creationflags": DETACHED} if sys.platform == "win32" else {"start_new_session": True}
-    subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "run", job_id],
-                     cwd=ROOT, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, close_fds=True, **kwargs)
+    sysplat.popen_detached([sys.executable, str(Path(__file__).resolve()), "run", job_id], cwd=ROOT)
     return job_id
 
 
@@ -60,11 +54,7 @@ def list_jobs(limit=10):
 
 
 def notify(title, message):
-    try:
-        from win11toast import notify as toast
-        toast(title, message)
-    except Exception:
-        print(f"[{title}] {message}")
+    sysplat.notify(title, message)
 
 
 def run_job(job_id):

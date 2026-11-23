@@ -14,7 +14,8 @@
 In these files, replace `YOUR-GITHUB-USERNAME` with your GitHub username:
 - `app_info.py` → `GITHUB_REPO = "yourname/wisp"`
 - `install.ps1` → `$Repo = "yourname/wisp"`
-- `README.md` → the install command near the top
+- `install.sh` → `REPO="yourname/wisp"`
+- `README.md` → both install commands near the top
 
 ### 3. Set up anonymous stats (PostHog, free)
 1. Sign up at <https://posthog.com> (free plan: 1 million events a month, far more than you'll need).
@@ -32,7 +33,7 @@ Easiest: **GitHub Desktop** (<https://desktop.github.com>)
 1. On GitHub: your repo → **Releases** → **Draft a new release**.
 2. **Choose a tag** → type `v1.0.0` → *Create new tag on publish*.
 3. Title: `Wisp 1.0.0`. Description: paste the 1.0.0 section from `CHANGELOG.md`.
-4. **Publish release**. Within a minute or two, the **Actions** tab builds `wisp-v1.0.0.zip` and attaches it to the release automatically.
+4. **Publish release**. Within a minute or two, the **Actions** tab builds **`wisp-v1.0.0-windows.zip`** and **`wisp-v1.0.0-mac.zip`** and attaches both to the release automatically. (To build them on your own PC instead: `py build_release.py v1.0.0` → they appear in `build/`.)
 5. Test the one-line install on your own PC (or a friend's).
 
 ---
@@ -44,7 +45,7 @@ Easiest: **GitHub Desktop** (<https://desktop.github.com>)
 4. GitHub Desktop: **Commit** → **Push**.
 5. GitHub: Releases → Draft a new release → tag `v1.0.1` (must match VERSION, or the build stops and tells you) → paste the changelog → **Publish**.
 
-Everyone's Wisp checks twice a day, says *"Wisp 1.0.1 is available"*, and updates with one click. Updates never touch anyone's settings, memory, routines or paired phones. If you add a new setting, put it in `config.default.json`; it'll be added to everyone's config automatically.
+Everyone's Wisp checks twice a day (Windows copies download the Windows zip, Macs the Mac zip), says *"Wisp 1.0.1 is available"*, and updates with one click. Updates never touch anyone's settings, memory, routines or paired phones. If you add a new setting, put it in `config.default.json`; it'll be added to everyone's config automatically.
 
 If you remove a file, add its name to `REMOVED_FILES` in `updater.py` so old copies get cleaned up.
 
@@ -60,6 +61,11 @@ If you remove a file, add its name to `REMOVED_FILES` in `updater.py` so old cop
 Good early signals: week-1 retention above ~20% is decent for a free desktop tool; if most people drop off on day 1, the setup experience (API key, installing) is usually why.
 
 ---
+
+## The Mac version
+- It's the same code: anything specific to Windows or Mac lives in `sysplat.py` (opening apps, sounds, clipboard, media keys…), `hotkeys.py` and `credentials.py`. Fix a Mac-only problem there.
+- It's labelled **beta** because it hasn't been tested on many Macs yet. Before you announce it, ask someone with a Mac to run the one-line install and try: talking (hold Right Option), the wake phrase, a timer, "what's on my screen?", the full HUD (Ctrl+Option+J) and the phone remote. Bug reports from Mac users are the fastest way to get it out of beta.
+- Mac users don't need to do anything extra for updates: Wisp downloads the Mac zip by itself.
 
 ## Things to keep in mind
 - **Anthropic's rules:** apps you distribute must use API key login, not people's Claude Pro/Max subscriptions. Wisp's setup screen asks for an API key for this reason. Don't add a "log in with your Claude account" option.

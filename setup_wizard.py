@@ -27,7 +27,7 @@ class SetupWizard:
             "name": self.cfg.get("user_name", ""),
             "voice": self.cfg.get("edge_voice", "en-GB-RyanNeural"),
             "wake": self.cfg.get("wake_word", "hey_jarvis"),
-            "autostart": autostart.is_enabled() if sys.platform == "win32" else False,
+            "autostart": autostart.is_enabled() if sys.platform in ("win32", "darwin") else False,
             "stats": self.cfg.get("share_usage_stats", True),
         }
         self.key_ok = credentials.has_api_key()
@@ -143,17 +143,19 @@ class SetupWizard:
         voice.Speaker(cfg).speak(f"Good evening{', ' + name if name else ''}. All systems are online.")
 
     def page_listen(self):
-        self.heading("Talking to me", "Hold F9 (or click the orb) any time to talk. You can also turn on a wake "
+        import hotkeys
+        talk = hotkeys.label(self.cfg.get("talk_key", "f9"))
+        self.heading("Talking to me", f"Hold {talk} (or click the orb) any time to talk. You can also turn on a wake "
                      "phrase so you can just say it. Listening for it happens entirely on your PC.")
         self.wake_var = tk.StringVar(value=self.choices["wake"])
         for code, label in ui.WAKE_WORDS:
             tk.Radiobutton(self.body, text=label, value=code, variable=self.wake_var, bg=ui.BG, fg=ui.TEXT,
                            selectcolor=ui.CARD, activebackground=ui.BG, activeforeground=ui.TEXT, font=self.f["body"],
                            anchor="w", command=lambda: self.choices.update(wake=self.wake_var.get())).pack(fill="x")
-        if sys.platform == "win32":
+        if sys.platform in ("win32", "darwin"):
             row = tk.Frame(self.body, bg=ui.BG)
             row.pack(fill="x", pady=(24, 0))
-            tk.Label(row, text=f"Start {APP_NAME} when I log in to Windows", bg=ui.BG, fg=ui.TEXT,
+            tk.Label(row, text=f"Start {APP_NAME} when I log in", bg=ui.BG, fg=ui.TEXT,
                      font=self.f["body"]).pack(side="left")
             ui.Switch(row, self.choices["autostart"], lambda v: self.choices.update(autostart=v), self.accent,
                       bg=ui.BG).pack(side="right")
@@ -176,11 +178,14 @@ class SetupWizard:
     def page_done(self):
         self.heading("All set", "Here's how to use me:")
         wake = dict(ui.WAKE_WORDS).get(self.choices["wake"], "")
-        tips = [("F9", "hold to talk (or click the orb)")]
+        import hotkeys
+        key = lambda name, default: hotkeys.label(self.cfg.get(name, default))
+        tips = [(key("talk_key", "f9"), "hold to talk (or click the orb)")]
         if self.choices["wake"]:
             tips.insert(0, (wake, "say it any time, then ask"))
         tips += [("Right-click the orb", "menu: settings, routines, connect your phone"),
-                 ("Ctrl+Shift+J", "full-screen HUD"), ("Ctrl+Shift+Space", "hide / show"),
+                 (key("hud_key", "ctrl+shift+j"), "full-screen HUD"),
+                 (key("show_hide_key", "ctrl+shift+space"), "hide / show"),
                  ("“in the background, …”", "run long tasks while you keep working"),
                  ("“when I say X, do Y”", "make your own routine")]
         for key, what in tips:
@@ -197,7 +202,7 @@ class SetupWizard:
         c = self.choices
         ui.save_config({"user_name": c["name"], "edge_voice": c["voice"], "voice_engine": "edge",
                         "wake_word": c["wake"], "share_usage_stats": bool(c["stats"]), "setup_done": True})
-        if sys.platform == "win32":
+        if sys.platform in ("win32", "darwin"):
             try:
                 autostart.set_enabled(c["autostart"])
             except Exception:

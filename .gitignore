@@ -12,6 +12,7 @@ jobs/
 backups/
 workspace/MEMORY.md
 workspace/mcp.json
+workspace/PLATFORM.md
 workspace/output/
 workspace/projects/
 workspace/.claude/settings.local.json

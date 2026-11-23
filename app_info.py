@@ -29,6 +29,14 @@ def parse_version(text):
     return tuple((parts + [0, 0, 0])[:3])
 
 
+MAC_DEFAULTS = {
+    "talk_key": "alt_r",               # hold Right Option to talk
+    "stop_key": "ctrl+alt+x",
+    "show_hide_key": "ctrl+alt+space",
+    "hud_key": "ctrl+alt+j",
+    "auto_hide_fullscreen": False,     # (Windows-only feature)
+}
+
 MEMORY_TEMPLATE = """# Wisp memory
 Things the user has asked me to remember, or lasting facts and preferences they've told me.
 (You can edit this file yourself. Delete a line to make Wisp forget it.)
@@ -44,6 +52,12 @@ def ensure_files():
     root = Path(__file__).resolve().parent
     if not (root / "config.json").exists() and (root / "config.default.json").exists():
         shutil.copy2(root / "config.default.json", root / "config.json")
+        import sys
+        if sys.platform == "darwin":  # Mac keyboards: F-keys need Fn, and Ctrl+Shift combos clash less as Ctrl+Option
+            import json
+            cfg = json.loads((root / "config.json").read_text(encoding="utf-8"))
+            cfg.update(MAC_DEFAULTS)
+            (root / "config.json").write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     memory = root / "workspace" / "MEMORY.md"
     if not memory.exists():
         memory.parent.mkdir(parents=True, exist_ok=True)

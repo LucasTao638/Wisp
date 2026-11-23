@@ -30,7 +30,8 @@ if ($Local) {
 } else {
     Say "[1/5] Downloading the latest Wisp..."
     $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ "User-Agent" = "Wisp-installer" }
-    $asset = $release.assets | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
+    $asset = $release.assets | Where-Object { $_.name -like "*windows*.zip" } | Select-Object -First 1
+    if (-not $asset) { $asset = $release.assets | Where-Object { $_.name -like "*.zip" -and $_.name -notlike "*mac*" } | Select-Object -First 1 }
     if (-not $asset) { throw "The latest release has no zip attached." }
     $zip = Join-Path $env:TEMP $asset.name
     Invoke-WebRequest $asset.browser_download_url -OutFile $zip -UseBasicParsing

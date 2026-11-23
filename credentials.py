@@ -1,6 +1,7 @@
-"""Stores your Anthropic API key encrypted, using Windows' own protection (DPAPI).
+"""Stores your Anthropic API key encrypted: Windows' own protection (DPAPI), or the macOS Keychain.
 
-The key is saved in secrets.bin and can only be decrypted by YOUR Windows account on THIS PC.
+Windows: saved in secrets.bin, which only YOUR Windows account on THIS PC can decrypt.
+Mac: saved in your login Keychain (as "Wisp - Anthropic API key").
 It never goes in config.json, the log, or anything that gets shared.
 """
 import json
@@ -33,8 +34,23 @@ def _dpapi(data, encrypt):
         kernel32.LocalFree(blob_out.pbData)
 
 
+KEYCHAIN_SERVICE = "Wisp - Anthropic API key"
+
+
+def _keychain(*args, input_text=None):
+    import subprocess
+    return subprocess.run(["security", *args], capture_output=True, text=True, input=input_text, timeout=15)
+
+
 def save_api_key(key):
     key = (key or "").strip()
+    if sys.platform == "darwin":
+        _keychain("delete-generic-password", "-s", KEYCHAIN_SERVICE)
+        if key:
+            r = _keychain("add-generic-password", "-s", KEYCHAIN_SERVICE, "-a", "wisp", "-w", key, "-U")
+            if r.returncode != 0:
+                raise OSError(r.stderr.strip() or "Couldn't save to the Keychain")
+        return
     if not key:
         FILE.unlink(missing_ok=True)
         return
@@ -46,6 +62,12 @@ def save_api_key(key):
 
 
 def load_api_key():
+    if sys.platform == "darwin":
+        try:
+            r = _keychain("find-generic-password", "-s", KEYCHAIN_SERVICE, "-w")
+            return r.stdout.strip() or None if r.returncode == 0 else None
+        except Exception:
+            return None
     try:
         raw = FILE.read_bytes()
     except OSError:

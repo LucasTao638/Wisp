@@ -11,7 +11,6 @@ import json
 import queue
 import random
 import re
-import sys
 import threading
 import time
 from pathlib import Path
@@ -22,6 +21,7 @@ import context
 import focus
 import routines
 import shortcuts
+import sysplat
 import telemetry
 import timers
 from voice import Speaker
@@ -137,16 +137,7 @@ class Assistant:
         self.speaker.speak(message)  # timers speak even when muted - that's the point of them
 
     def _chime(self, repeats=1):
-        if sys.platform != "win32":
-            return
-        import winsound
-
-        def play():
-            for _ in range(repeats):
-                for freq, ms in ((880, 120), (1175, 120), (1568, 220)):
-                    winsound.Beep(freq, ms)
-                time.sleep(0.15)
-        threading.Thread(target=play, daemon=True).start()
+        sysplat.chime("alert", repeats)
 
     def next_timer(self):
         """(label, seconds left) for the soonest timer, for the HUD - or None."""
@@ -312,9 +303,8 @@ class Assistant:
                 time.sleep(0.1)
             if self.busy.is_set() or self.speaker.speaking or self.is_listening:
                 return
-            if self.cfg.get("wake_chime", True) and sys.platform == "win32":
-                import winsound
-                winsound.Beep(988, 70)  # a soft, short blip: "I'm listening"
+            if self.cfg.get("wake_chime", True):
+                sysplat.chime("blip")  # a soft, short blip: "I'm listening"
             time.sleep(0.15)  # let the chime finish so it isn't recorded
             if self.speaker.speaking or self.busy.is_set() or self.is_listening:
                 return
@@ -489,12 +479,11 @@ class Assistant:
         self.emit("voice", "on")
         self.speaker.precache(self.cfg.get("thinking_acks", DEFAULT_ACKS) + ["Yes?", "Didn't catch that."])
         try:
-            import keyboard
+            import hotkeys
             talk_key = self.cfg.get("talk_key", "f9")
-            keyboard.on_press_key(talk_key, lambda _: self.hotkeys_active and self.start_listening())
-            keyboard.on_release_key(talk_key, lambda _: self.stop_listening())
-            keyboard.add_hotkey(self.cfg.get("stop_key", "f10"), self.stop)
-            self.emit("info", f"Voice ready: hold {talk_key.upper()} (or the mic button) to talk.")
+            hotkeys.on_hold(talk_key, lambda: self.hotkeys_active and self.start_listening(), self.stop_listening)
+            hotkeys.add_hotkey(self.cfg.get("stop_key", "f10"), self.stop)
+            self.emit("info", f"Voice ready: hold {hotkeys.label(talk_key)} (or click the orb) to talk.")
         except Exception as exc:
             self.emit("info", f"Hotkeys are off ({exc}). Use the mic button instead.")
         self._start_wake_word()
@@ -528,9 +517,8 @@ class Assistant:
         self.speaker.stop()
         self.emit("status", "listening")
         self.emit("wake", "")
-        if self.cfg.get("wake_chime", True) and sys.platform == "win32":
-            import winsound
-            threading.Thread(target=lambda: winsound.Beep(1175, 90), daemon=True).start()
+        if self.cfg.get("wake_chime", True):
+            sysplat.chime("wake")
 
     def start_listening(self):
         if not self.voice_ready or self.recording:

@@ -16,7 +16,7 @@ import background
 import focus
 import timers
 from context import hide_from_screenshots
-from hud_draw import KEY, bracket_panel, draw_orb, gauge, mix, orb_state
+from hud_draw import KEY, bracket_panel, draw_orb, gauge, make_see_through, mix, orb_state, pick_fonts
 
 PANEL = "#070b10"
 TEXT = "#dfe7ef"
@@ -32,7 +32,16 @@ class SystemStats:
         self.charging = False
         self._last_times = None
 
+    def _update_mac(self):
+        _mac_stats(self)
+
     def update(self):
+        if time.time() - getattr(self, "_at", 0) < 2:
+            return
+        self._at = time.time()
+        if sys.platform == "darwin":
+            self._update_mac()
+            return
         if sys.platform != "win32":
             return
         import ctypes
@@ -72,6 +81,36 @@ class SystemStats:
             self.charging = p.ACLineStatus == 1
         except Exception:
             pass
+
+
+def _run(cmd):
+    import subprocess
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=3).stdout
+    except Exception:
+        return ""
+
+
+def _mac_stats(stats):
+    import os
+    import re
+    try:  # CPU: load average vs number of cores (a good, cheap approximation)
+        stats.cpu = min(100.0, os.getloadavg()[0] / (os.cpu_count() or 1) * 100)
+    except OSError:
+        pass
+    vm = _run(["vm_stat"])
+    total = _run(["sysctl", "-n", "hw.memsize"]).strip()
+    page = re.search(r"page size of (\d+)", vm)
+    if vm and total.isdigit() and page:
+        pages = {k.strip().lower(): int(v.strip().rstrip(".")) for k, v in
+                 (line.split(":", 1) for line in vm.splitlines()[1:] if ":" in line) if v.strip().rstrip(".").isdigit()}
+        used = (pages.get("pages active", 0) + pages.get("pages wired down", 0)
+                + pages.get("pages occupied by compressor", 0)) * int(page.group(1))
+        stats.mem = min(100.0, used * 100 / int(total))
+    batt = _run(["pmset", "-g", "batt"])
+    m = re.search(r"(\d+)%", batt)
+    stats.battery = float(m.group(1)) if m else None
+    stats.charging = "AC Power" in batt or bool(re.search(r"(?<!dis)charging", batt))
 
 
 def _hwnd(win):
@@ -132,15 +171,11 @@ class FullHud:
         hud.configure(bg=KEY)
         hud.geometry(f"{W}x{H}+0+0")
         hud.attributes("-topmost", True)
-        if sys.platform == "win32":
-            hud.attributes("-transparentcolor", KEY)
         hud.attributes("-alpha", 0.0)
         for w in (dim, hud):
             hide_from_screenshots(w)  # so "what's on my screen?" sees your screen, not the HUD
 
-        fam = set(tkfont.families())
-        hudf = "Bahnschrift" if "Bahnschrift" in fam else ("Segoe UI" if "Segoe UI" in fam else "Helvetica")
-        body = "Segoe UI" if "Segoe UI" in fam else "Helvetica"
+        hudf, body = pick_fonts(tkfont)
         px = lambda n: -max(8, int(n * u))  # negative size = pixels, so it scales with the screen
         self.f_clock = tkfont.Font(family=hudf, size=px(64), weight="bold")
         self.f_status = tkfont.Font(family=hudf, size=px(20), weight="bold")
@@ -151,6 +186,7 @@ class FullHud:
         self.f_value = tkfont.Font(family=hudf, size=px(15), weight="bold")
 
         self.c = c = tk.Canvas(hud, width=W, height=H, bg=KEY, highlightthickness=0)
+        make_see_through(hud, c)
         c.pack(fill="both", expand=True)
         self._layout()
 
@@ -235,7 +271,8 @@ class FullHud:
                       font=self.f_small, fill=DIM, tags="static")
 
         # bottom-right hint + close button
-        key = self.cfg.get("hud_key", "ctrl+shift+j").title().replace("+", " + ")
+        import hotkeys
+        key = hotkeys.label(self.cfg.get("hud_key", "ctrl+shift+j"))
         wake = (self.cfg.get("wake_word") or "").replace("_", " ").title()
         hint = f"{key}  open / close" + (f"      Say “{wake}” to talk" if wake else "")
         c.create_text(W - m, H - m, text=hint, anchor="se", font=self.f_small, fill=DIM, tags="static")

@@ -7,9 +7,10 @@
 """
 import os
 import re
-import sys
 import time
 from pathlib import Path
+
+import sysplat
 
 ROOT = Path(__file__).resolve().parent
 SHOTS = ROOT / "workspace" / "output" / "screens"
@@ -36,9 +37,12 @@ def wants_clipboard(text):
 # ---------- screenshots ----------
 def take_screenshot(max_width=1800):
     """Saves a screenshot of all monitors and returns its path."""
-    from PIL import ImageGrab
+    from PIL import Image
     SHOTS.mkdir(parents=True, exist_ok=True)
-    img = ImageGrab.grab(all_screens=True)
+    raw = SHOTS / "_raw.png"
+    with screenshot_guard():  # on Mac, Wisp's own windows are hidden for a moment
+        sysplat.screenshot(raw)
+    img = Image.open(raw)
     if img.width > max_width:
         img = img.resize((max_width, int(img.height * max_width / img.width)))
     path = SHOTS / f"screen_{time.strftime('%Y%m%d_%H%M%S')}.png"
@@ -53,45 +57,25 @@ def take_screenshot(max_width=1800):
 
 
 def hide_from_screenshots(tk_window):
-    """Stop a window appearing in screenshots and screen recordings (Windows 10 2004+)."""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-        hwnd = ctypes.windll.user32.GetAncestor(tk_window.winfo_id(), 2) or tk_window.winfo_id()
-        ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x11)  # WDA_EXCLUDEFROMCAPTURE
-    except Exception:
-        pass
+    """Keep a window out of screenshots (Windows). On Mac, screenshot_guard hides Wisp briefly instead."""
+    sysplat.hide_from_screenshots(tk_window)
+
+
+class _NoGuard:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+# The UI replaces this on Mac with something that hides Wisp's windows while the screenshot is taken.
+screenshot_guard = _NoGuard
 
 
 # ---------- clipboard ----------
 def clipboard_text():
-    if sys.platform != "win32":
-        return None
-    import ctypes
-    from ctypes import wintypes
-    user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
-    user32.GetClipboardData.restype = wintypes.HANDLE
-    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
-    kernel32.GlobalLock.restype = wintypes.LPVOID
-    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
-    for _ in range(5):  # another app may have the clipboard open for a moment
-        if user32.OpenClipboard(None):
-            break
-        time.sleep(0.05)
-    else:
-        return None
-    try:
-        handle = user32.GetClipboardData(13)  # CF_UNICODETEXT
-        if not handle:
-            return None
-        ptr = kernel32.GlobalLock(handle)
-        try:
-            return ctypes.wstring_at(ptr)
-        finally:
-            kernel32.GlobalUnlock(handle)
-    finally:
-        user32.CloseClipboard()
+    return sysplat.clipboard_text()
 
 
 def clipboard_image():
@@ -120,7 +104,7 @@ def enrich(text):
             clip = clip[:30000]
             note = f"[The user copied this text to their clipboard{' (cut off, it was very long)' if cut else ''}:]\n" \
                    f"<clipboard>\n{clip}\n</clipboard>\n" \
-                   "[If they want a result they can paste, put it on their clipboard with PowerShell Set-Clipboard " \
+                   f"[If they want a result they can paste, put it on their clipboard: {sysplat.clipboard_hint()}, " \
                    "and say you've done it.]\n\n"
             return note + text, "Reading your clipboard…"
         image = clipboard_image()

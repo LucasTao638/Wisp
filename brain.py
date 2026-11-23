@@ -43,9 +43,45 @@ def find_exe(name):
     return None
 
 
+WINDOWS_GUIDE = """# This computer: Windows
+Use the most reliable method first:
+1. **Direct commands**: PowerShell/shell commands, `start <app or file or URL>`, and file tools. Fast and exact.
+2. **Windows-MCP accessibility tools**: get the window's state/UI tree, find the control **by its name**, then click or type into it.
+3. **Screenshot and click by coordinates**: only when 1 and 2 can't do it.
+Check the state again after an action when you're unsure it worked or the next step depends on it.
+- Clipboard: PowerShell `Set-Clipboard -Value '...'` (for long text write it to a file in output/ and use `Get-Content file -Raw | Set-Clipboard`).
+- Paths look like C:\\Users\\name\\Documents. The user's home is %USERPROFILE%.
+"""
+
+MAC_GUIDE = """# This computer: macOS
+Use the most reliable method first:
+1. **Direct commands** in the shell (zsh): `open -a "App Name"`, `open <file/folder/URL>`, file tools. Fast and exact.
+2. **AppleScript** with `osascript -e '...'`: control apps that support it (e.g. `tell application "Music" to play`,
+   Safari/Chrome tabs, Finder, Notes, Calendar, Mail, System Events). For clicking menus/buttons in other apps use
+   System Events UI scripting (`tell application "System Events" to tell process "App" to click menu item ...`).
+   UI scripting needs Accessibility permission; if macOS refuses, tell the user to allow it in
+   System Settings > Privacy & Security > Accessibility.
+3. **Look before and after**: `screencapture -x /tmp/wisp_check.png`, then Read the image, to see the screen and check
+   an action worked. Don't guess coordinates.
+- Clipboard: `printf '%s' 'text' | pbcopy` (or `pbcopy < file`); read it with `pbpaste`.
+- Paths look like /Users/name/Documents. Never use sudo.
+"""
+
+
+def write_platform_guide():
+    """Tell Claude which OS this is and how to control it (workspace/PLATFORM.md, imported by CLAUDE.md)."""
+    (WORKSPACE / "PLATFORM.md").write_text(MAC_GUIDE if sys.platform == "darwin" else WINDOWS_GUIDE,
+                                           encoding="utf-8")
+
+
 def write_mcp_config():
-    """Write workspace/mcp.json with the full path to uvx (avoids PATH problems on Windows)."""
+    """Write workspace/mcp.json with the full path to uvx (avoids PATH problems on Windows).
+    On Mac there's no Windows-MCP: Claude uses AppleScript and the shell instead (see MAC_GUIDE)."""
+    write_platform_guide()
     servers = {}
+    if sys.platform != "win32":
+        MCP_CONFIG.write_text(json.dumps({"mcpServers": servers}, indent=2), encoding="utf-8")
+        return True
     env = {"ANONYMIZED_TELEMETRY": "false"}
     installed = find_exe("windows-mcp")  # from: uv tool install windows-mcp --python 3.13
     uvx = find_exe("uvx")

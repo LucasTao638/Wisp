@@ -2,7 +2,6 @@
 
 Type in the box, or hold the mic button / F9 to talk.
 """
-import os
 import queue
 import re
 import sys
@@ -35,6 +34,14 @@ STATUS = {  # status -> (dot colour, label)
     "thinking": ("#e3b341", "Thinking"),
     "speaking": ("#6c8cff", "Speaking"),
 }
+
+
+def _open(path):
+    import sysplat
+    try:
+        sysplat.open_target(str(path))
+    except Exception as exc:
+        print(f"(couldn't open {path}: {exc})")
 
 
 def clean_markdown(text):
@@ -255,9 +262,9 @@ class WispApp:
         buttons = tk.Frame(win, bg=BG)
         buttons.pack(fill="x", padx=14, pady=10)
         FlatButton(buttons, "Open jobs folder",
-                   lambda: os.startfile(background.JOBS) if hasattr(os, "startfile") else None).pack(side="left")
+                   lambda: _open(background.JOBS)).pack(side="left")
         FlatButton(buttons, "Open output folder",
-                   lambda: os.startfile(background.ROOT / "workspace" / "output") if hasattr(os, "startfile") else None
+                   lambda: _open(background.ROOT / "workspace" / "output")
                    ).pack(side="left", padx=8)
         jobs = []
 

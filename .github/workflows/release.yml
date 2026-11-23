@@ -1,4 +1,4 @@
-# Builds the download zip and attaches it to the release.
+# Builds the Windows and Mac download zips and attaches them to the release.
 # How to release: bump VERSION in app_info.py, then on GitHub: Releases > "Draft a new release",
 # tag it v<VERSION> (e.g. v1.0.1), write what's new, and Publish. This workflow does the rest.
 name: Build release zip
@@ -28,13 +28,11 @@ jobs:
       - name: Check the code at least compiles
         run: python3 -m compileall -q .
 
-      - name: Build wisp-${{ github.ref_name }}.zip
+      - name: Build the Windows and Mac zips
         run: |
-          mkdir -p build/wisp
-          rsync -a --exclude '.git' --exclude '.github' --exclude 'build' --exclude '__pycache__' ./ build/wisp/
-          cd build && zip -qr "wisp-${GITHUB_REF_NAME}.zip" wisp
+          python3 build_release.py "${GITHUB_REF_NAME}"
 
-      - name: Attach it to the release
+      - name: Attach them to the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" "build/wisp-${GITHUB_REF_NAME}.zip" --clobber
+        run: gh release upload "$GITHUB_REF_NAME" build/*.zip --clobber

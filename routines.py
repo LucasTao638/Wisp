@@ -25,11 +25,12 @@ Steps a routine can use (instant ones first; "ask" hands something to Claude):
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
 from urllib.parse import urlparse
+
+import sysplat
 
 ROOT = Path(__file__).resolve().parent
 FILE = ROOT / "routines.json"
@@ -256,19 +257,11 @@ def run(routine, assistant):
             if "say" in step:
                 assistant.say_now(step["say"])
             elif "open" in step:
-                if sys.platform == "win32":
-                    os.startfile(os.path.expandvars(os.path.expanduser(step["open"])))
+                sysplat.open_target(step["open"])
             elif "close" in step:
-                name = step["close"].removesuffix(".exe") + ".exe"
-                if sys.platform == "win32":
-                    subprocess.run(["taskkill", "/IM", name], capture_output=True, creationflags=0x08000000)
-            elif step.get("minimise_all") and sys.platform == "win32":
-                import ctypes
-                user32 = ctypes.windll.user32
-                user32.keybd_event(0x5B, 0, 0, 0)  # Win
-                user32.keybd_event(0x44, 0, 0, 0)  # D
-                user32.keybd_event(0x44, 0, 2, 0)
-                user32.keybd_event(0x5B, 0, 2, 0)
+                sysplat.close_app(step["close"])
+            elif step.get("minimise_all"):
+                sysplat.show_desktop()
             elif "timer" in step:
                 timers.add(seconds=float(step["timer"]) * 60, label=step.get("label", ""), kind="timer")
             elif "focus_session" in step:
@@ -276,16 +269,12 @@ def run(routine, assistant):
             elif step.get("stop_focus_session"):
                 focus.stop_session()
             elif "media" in step or "volume" in step:
-                import remote
                 key = step.get("media") or f"volume_{step['volume']}"
-                key = {"mute": "mute_pc"}.get(key, key)
-                if key in remote.MEDIA_KEYS and sys.platform == "win32":
-                    remote._press_key(remote.MEDIA_KEYS[key][0], int(step.get("steps", remote.MEDIA_KEYS[key][1])))
+                sysplat.media({"mute": "mute_pc"}.get(key, key), step.get("steps"))
             elif "mute_jarvis" in step:
                 assistant.set_muted(bool(step["mute_jarvis"]))
-            elif step.get("lock_pc") and sys.platform == "win32":
-                import ctypes
-                ctypes.windll.user32.LockWorkStation()
+            elif step.get("lock_pc"):
+                sysplat.lock_screen()
             elif "wait" in step:
                 time.sleep(min(30, float(step["wait"])))
             elif "ask" in step:

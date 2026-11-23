@@ -1,6 +1,7 @@
 # Changelog
 
 ## 1.0.0 (first public release)
+- Windows 10/11, plus a **Mac version (beta)** for macOS 12+ (Apple Silicon and Intel)
 - Voice assistant for Windows powered by Claude: wake phrase, push-to-talk, natural voices, follow-up listening
 - App control (Windows-MCP), web research, background jobs, multi-step projects
 - Screen and clipboard understanding

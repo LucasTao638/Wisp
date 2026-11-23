@@ -4,13 +4,14 @@
 Anything more complicated (e.g. "open notepad and type hello") still goes to Claude.
 Add your own apps and websites to APPS and SITES below.
 """
-import os
 import re
 import urllib.parse
 import webbrowser
 
+import sysplat
+
 # What you say -> what Windows should run (program name, or a special "app:" link)
-APPS = {
+WINDOWS_APPS = {
     "notepad": "notepad", "calculator": "calc", "calc": "calc",
     "file explorer": "explorer", "explorer": "explorer", "files": "explorer",
     "settings": "ms-settings:", "task manager": "taskmgr", "paint": "mspaint",
@@ -21,6 +22,21 @@ APPS = {
     "camera": "microsoft.windows.camera:", "snipping tool": "ms-screenclip:",
     "clock": "ms-clock:", "calendar": "outlookcal:", "store": "ms-windows-store:",
 }
+
+# What you say -> the Mac app's name (opened with "open -a"), or a link
+MAC_APPS = {
+    "notepad": "TextEdit", "textedit": "TextEdit", "notes": "Notes", "calculator": "Calculator", "calc": "Calculator",
+    "finder": "Finder", "files": "Finder", "file explorer": "Finder", "explorer": "Finder",
+    "settings": "System Settings", "system settings": "System Settings", "task manager": "Activity Monitor",
+    "activity monitor": "Activity Monitor", "terminal": "Terminal", "safari": "Safari",
+    "chrome": "Google Chrome", "google chrome": "Google Chrome", "edge": "Microsoft Edge", "firefox": "Firefox",
+    "word": "Microsoft Word", "excel": "Microsoft Excel", "powerpoint": "Microsoft PowerPoint",
+    "outlook": "Microsoft Outlook", "spotify": "Spotify", "steam": "Steam", "discord": "Discord", "music": "Music",
+    "messages": "Messages", "mail": "Mail", "calendar": "Calendar", "photos": "Photos", "camera": "Photo Booth",
+    "clock": "Clock", "store": "App Store", "app store": "App Store", "facetime": "FaceTime", "maps": "Maps",
+    "screenshot": "Screenshot", "snipping tool": "Screenshot",
+}
+APPS = MAC_APPS if sysplat.IS_MAC else WINDOWS_APPS
 
 SITES = {
     "youtube": "https://www.youtube.com", "google": "https://www.google.com",
@@ -63,8 +79,8 @@ def try_shortcut(text):
         return f"Opening {name}."
     if name in APPS:
         try:
-            os.startfile(APPS[name])  # Windows only
+            sysplat.open_target(APPS[name])
             return f"Opening {name}."
-        except (OSError, AttributeError):
+        except Exception:
             return None  # not installed or not found - let Claude try another way
     return None

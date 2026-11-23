@@ -21,7 +21,7 @@ import updates
 from app_info import APP_NAME
 from context import hide_from_screenshots
 import classic_ui  # reuses its jobs window
-from hud_draw import KEY, draw_orb, hex_to_rgb, mix, orb_state
+from hud_draw import KEY, draw_orb, hex_to_rgb, make_see_through, mix, orb_state, pick_fonts
 from hud_menu import HudMenu
 from overlay import FullHud
 from classic_ui import clean_markdown
@@ -45,6 +45,29 @@ STATUS_WORDS = {"starting": "INITIALISING", "ready": "ONLINE", "listening": "LIS
                 "thinking": "PROCESSING", "speaking": "SPEAKING"}
 
 
+def _key_label(key):
+    import hotkeys
+    return hotkeys.label(key) if key else ""
+
+
+class _CaptureGuard:
+    """Used around a screenshot on Mac: hides Wisp's windows, then brings them back."""
+
+    def __init__(self, app):
+        self.app = app
+
+    def __enter__(self):
+        done = threading.Event()
+        self.app.events.put(("ui_capture", ("hide", done)))
+        done.wait(2)
+        time.sleep(0.35)  # let macOS finish redrawing
+        return self
+
+    def __exit__(self, *exc):
+        self.app.events.put(("ui_capture", ("show", None)))
+        return False
+
+
 class OrbApp:
     def __init__(self):
         self.events = queue.Queue()
@@ -52,7 +75,8 @@ class OrbApp:
         self.cfg = self.assistant.cfg
         self.accent = self.cfg.get("accent_colour", "#38d6ff")
         self.status = "starting"
-        self.caption = "Click the orb or hold F9 to talk."
+        import hotkeys
+        self.caption = f"Click the orb or hold {hotkeys.label(self.cfg.get('talk_key', 'f9'))} to talk."
         self.step = ""
         self.log = []                  # everything that's happened, for the conversation window
         self.transcript = None
@@ -76,15 +100,11 @@ class OrbApp:
         root.overrideredirect(True)           # no title bar or border
         root.attributes("-topmost", True)
         root.configure(bg=KEY)
-        if sys.platform == "win32":
-            root.attributes("-transparentcolor", KEY)
         root.geometry(f"{self.W}x{self.H}+{self._corner()[0]}+{self._corner()[1]}")
         self.hidden = False
         self.auto_hidden = False
 
-        families = set(tkfont.families())
-        hud = "Bahnschrift" if "Bahnschrift" in families else ("Segoe UI" if "Segoe UI" in families else "Helvetica")
-        body = "Segoe UI" if "Segoe UI" in families else "Helvetica"
+        hud, body = pick_fonts(tkfont)
         self.f_status = tkfont.Font(family=hud, size=10, weight="bold")
         self.f_caption = tkfont.Font(family=body, size=11)
         self.f_small = tkfont.Font(family=body, size=9)
@@ -92,6 +112,7 @@ class OrbApp:
         self.f_body = tkfont.Font(family=body, size=11)
 
         self.canvas = c = tk.Canvas(root, width=self.W, height=self.H, bg=KEY, highlightthickness=0)
+        make_see_through(root, c)
         c.pack(fill="both", expand=True)
         self._build_panel()
 
@@ -106,6 +127,9 @@ class OrbApp:
         self._start_tray()
         self._register_show_hide_key()
         self.overlay = FullHud(self)
+        if sys.platform == "darwin":  # Mac can't exclude windows from screenshots: hide them for a moment
+            import context
+            context.screenshot_guard = lambda: _CaptureGuard(self)
         hide_from_screenshots(self.root)  # keep the orb out of screenshots (yours, Claude's and the phone's)
         import traceback
         self.root.report_callback_exception = lambda et, ev, tb: print(
@@ -194,7 +218,7 @@ class OrbApp:
               if self.update_info else []),
             {"label": "Settings", "command": self.show_settings},
             {"label": "Open full HUD", "command": self.overlay.open,
-             "hint": self.cfg.get("hud_key", "ctrl+shift+j").title().replace("+", " + ")},
+             "hint": _key_label(self.cfg.get("hud_key", "ctrl+shift+j"))},
             {"label": "Show conversation", "command": self.show_transcript},
             {"label": "Connect phone", "command": self.show_phone_window},
             {"label": "Routines", "command": self.show_routines},
@@ -217,7 +241,7 @@ class OrbApp:
             {"label": "Move back to corner", "command": self.to_corner},
             {"label": "Open log (for problems)", "command": self.open_log},
             {"label": "Hide", "command": self.hide,
-             "hint": self.cfg.get("show_hide_key", "").title().replace("+", " + ")},
+             "hint": _key_label(self.cfg.get("show_hide_key", ""))},
             {"sep": True},
             {"label": "Quit Wisp", "command": self.quit, "danger": True},
         ]
@@ -264,6 +288,9 @@ class OrbApp:
                 kind, text = self.events.get_nowait()
                 if kind == "ui":
                     self._ui_action(text)
+                    continue
+                if kind == "ui_capture":
+                    self._capture_visibility(*text)
                     continue
                 if kind == "ui_update":
                     self.update_info = text
@@ -371,6 +398,24 @@ class OrbApp:
         when = timers.clock(left) if kind == "timer" or left < 3600 else timers.say_time(time.time() + left)
         return f"\u23f1 {name}  {when}"
 
+    def _capture_visibility(self, action, done):
+        """Hide (then restore) Wisp's windows so a Mac screenshot shows your screen, not Wisp."""
+        if action == "hide":
+            self._hidden_for_capture = [w for w in (self.root, self.overlay.dim, self.overlay.hud)
+                                        if w is not None and w.winfo_viewable()]
+            for w in self._hidden_for_capture:
+                w.withdraw()
+            self.root.update_idletasks()
+            if done:
+                done.set()
+        else:
+            for w in getattr(self, "_hidden_for_capture", []):
+                try:
+                    w.deiconify()
+                except tk.TclError:
+                    pass
+            self._hidden_for_capture = []
+
     # ---------- position ----------
     def _work_area(self):
         """The screen area not covered by the taskbar."""
@@ -457,11 +502,11 @@ class OrbApp:
         if not key:
             return
         try:
-            import keyboard
-            keyboard.add_hotkey(key, lambda: self.events.put(("ui", "toggle")))
+            import hotkeys
+            hotkeys.add_hotkey(key, lambda: self.events.put(("ui", "toggle")))
             hud_key = self.cfg.get("hud_key", "ctrl+shift+j")
             if hud_key:
-                keyboard.add_hotkey(hud_key, lambda: self.events.put(("ui", "hud")))
+                hotkeys.add_hotkey(hud_key, lambda: self.events.put(("ui", "hud")))
         except Exception as exc:
             print(f"(show/hide hotkey off: {exc})")
 
@@ -477,6 +522,16 @@ class OrbApp:
         return img
 
     def _start_tray(self):
+        if sys.platform == "darwin":
+            # No tray on Mac (it can't share the main thread with this window): clicking Wisp's Dock icon
+            # shows it again, and Cmd+Q quits.
+            try:
+                self.root.createcommand("::tk::mac::ReopenApplication", lambda *a: self.events.put(("ui", "toggle")))
+                self.root.createcommand("::tk::mac::Quit", lambda *a: self.events.put(("ui", "quit")))
+            except Exception:
+                pass
+            self.tray = None
+            return
         try:
             import pystray
         except ImportError:

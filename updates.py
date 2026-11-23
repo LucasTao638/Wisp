@@ -6,7 +6,6 @@ Installing an update closes Wisp, runs updater.py (which never touches your data
 """
 import json
 import os
-import subprocess
 import sys
 import tempfile
 import threading
@@ -34,7 +33,10 @@ def check():
     latest = rel.get("tag_name", "")
     if app_info.parse_version(latest) <= app_info.parse_version(app_info.VERSION):
         return None
-    asset = next((a for a in rel.get("assets", []) if a.get("name", "").lower().endswith(".zip")), None)
+    zips = [a for a in rel.get("assets", []) if a.get("name", "").lower().endswith(".zip")]
+    mine = "mac" if sys.platform == "darwin" else "windows"
+    asset = next((a for a in zips if mine in a["name"].lower()), None) \
+        or next((a for a in zips if "mac" not in a["name"].lower() and "windows" not in a["name"].lower()), None)
     return {"version": latest.lstrip("vV"), "notes": (rel.get("body") or "").strip()[:1500],
             "url": asset["browser_download_url"] if asset else None, "page": rel.get("html_url")}
 
@@ -82,11 +84,7 @@ def install(info, on_progress=print):
         while chunk := res.read(65536):
             f.write(chunk)
     on_progress("Installing… Wisp will restart in a moment.")
-    exe = Path(sys.executable)
-    pythonw = exe.with_name("pythonw.exe")
-    cmd = [str(pythonw if pythonw.exists() else exe), str(ROOT / "updater.py"), str(target),
-           "--wait-pid", str(os.getpid()), "--restart"]
-    flags = 0x00000008 | 0x00000200 if sys.platform == "win32" else 0  # detached, so it outlives Wisp
-    subprocess.Popen(cmd, cwd=ROOT, creationflags=flags, close_fds=True,
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    import sysplat
+    cmd = [sysplat.python_gui_exe(), str(ROOT / "updater.py"), str(target), "--wait-pid", str(os.getpid()), "--restart"]
+    sysplat.popen_detached(cmd, cwd=ROOT)  # detached, so it outlives Wisp
     return True

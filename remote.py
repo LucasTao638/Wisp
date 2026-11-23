@@ -18,7 +18,7 @@ import json
 import os
 import secrets
 import socket
-import sys
+import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,6 +27,7 @@ from urllib.parse import parse_qs, urlparse
 
 import background
 import focus
+import sysplat
 import timers
 
 ROOT = Path(__file__).resolve().parent
@@ -92,20 +93,14 @@ def local_addresses(port):
 
 
 # ---------- PC controls the phone can use ----------
-def _press_key(vk, times=1):
-    import ctypes
-    for _ in range(times):
-        ctypes.windll.user32.keybd_event(vk, 0, 0, 0)
-        ctypes.windll.user32.keybd_event(vk, 0, 2, 0)  # key up
-
-
-MEDIA_KEYS = {"play_pause": (0xB3, 1), "next": (0xB0, 1), "previous": (0xB1, 1),
-              "volume_up": (0xAF, 3), "volume_down": (0xAE, 3), "mute_pc": (0xAD, 1)}
+MEDIA_KEYS = sysplat.MEDIA_ACTIONS  # play_pause, next, previous, volume_up, volume_down, mute_pc
 
 
 def screenshot_jpeg(max_width=1600):
-    from PIL import ImageGrab
-    img = ImageGrab.grab(all_screens=True)
+    from PIL import Image
+    tmp = Path(tempfile.gettempdir()) / "wisp_phone_shot.png"
+    sysplat.screenshot(tmp)
+    img = Image.open(tmp)
     if img.width > max_width:
         img = img.resize((max_width, int(img.height * max_width / img.width)))
     buf = io.BytesIO()
@@ -226,12 +221,10 @@ class PhoneRemote:
 
     def action(self, name, value=None):
         a = self.a
-        if name in MEDIA_KEYS and sys.platform == "win32":
-            vk, times = MEDIA_KEYS[name]
-            _press_key(vk, times)
-        elif name == "lock_pc" and sys.platform == "win32":
-            import ctypes
-            ctypes.windll.user32.LockWorkStation()
+        if name in MEDIA_KEYS:
+            sysplat.media(name)
+        elif name == "lock_pc":
+            sysplat.lock_screen()
         elif name == "stop":
             a.stop()
         elif name == "new_chat":

@@ -43,10 +43,6 @@ class HudMenu:
         win.overrideredirect(True)
         win.attributes("-topmost", True)
         win.configure(bg=KEY)
-        try:
-            win.attributes("-transparentcolor", KEY)
-        except tk.TclError:
-            pass
 
         # keep it on screen: open up/left from the mouse if there isn't room
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
@@ -62,6 +58,8 @@ class HudMenu:
             pass
 
         self.c = c = tk.Canvas(win, width=self.w, height=self.h, bg=KEY, highlightthickness=0)
+        from hud_draw import make_see_through
+        make_see_through(win, c)
         c.pack()
         rounded_rect(c, 1, 1, self.w - 2, self.h - 2, 14 * s, fill=panel,
                      outline=_mix(panel, accent, 0.45), width=1)

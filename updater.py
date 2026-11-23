@@ -11,6 +11,7 @@ What it does:
   - config.json: keeps all YOUR settings, and only adds any new settings from the update
 """
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -135,6 +136,7 @@ def update(zip_path):
             updated.append(rel)
 
     migrate(backup)
+    _fix_permissions()
     try:
         import importlib
         import app_info
@@ -153,6 +155,14 @@ def update(zip_path):
 def _wait_for_exit(pid, timeout=60):
     """Wait for Wisp to close before replacing its files."""
     if sys.platform != "win32":
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)  # still running?
+            except OSError:
+                break
+            time.sleep(0.5)
+        time.sleep(1)
         return
     import ctypes
     handle = ctypes.windll.kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
@@ -163,20 +173,33 @@ def _wait_for_exit(pid, timeout=60):
 
 
 def _restart():
-    import subprocess
-    exe = Path(sys.executable)
-    pythonw = exe.with_name("pythonw.exe")
-    flags = 0x00000008 if sys.platform == "win32" else 0
-    subprocess.Popen([str(pythonw if pythonw.exists() else exe), str(ROOT / "app.py")], cwd=ROOT,
-                     creationflags=flags, close_fds=True)
+    import sysplat
+    sysplat.launch_wisp(ROOT)
+
+
+def _fix_permissions():
+    """Zip files lose the 'executable' flag; put it back on the Mac/Linux scripts."""
+    if sys.platform == "win32":
+        return
+    for pattern in ("*.command", "*.sh"):
+        for f in ROOT.glob(pattern):
+            f.chmod(0o755)
 
 
 def _install_requirements():
+    """Install any new packages the update needs."""
+    import shutil
     import subprocess
+    mac = sys.platform == "darwin"
+    reqs = ROOT / ("requirements-mac.txt" if mac else "requirements.txt")
+    python = sys.executable.replace("pythonw.exe", "python.exe")
+    uv = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
+    if mac and Path(uv).exists():  # the Mac install uses uv (its Python has no pip)
+        cmd = [uv, "pip", "install", "--python", python, "-q", "-r", str(reqs)]
+    else:
+        cmd = [python, "-m", "pip", "install", "-q", "-r", str(reqs)]
     try:
-        subprocess.run([sys.executable.replace("pythonw.exe", "python.exe"), "-m", "pip", "install", "-q", "-r",
-                        str(ROOT / "requirements.txt")], timeout=600, capture_output=True,
-                       creationflags=0x08000000 if sys.platform == "win32" else 0)
+        subprocess.run(cmd, timeout=600, capture_output=True, creationflags=0x08000000 if sys.platform == "win32" else 0)
     except Exception as exc:
         print(f"(couldn't install new packages: {exc})")
 

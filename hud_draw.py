@@ -126,3 +126,29 @@ def gauge(c, x, y, w, u, label, value, accent, panel, font, small_font, tag="dyn
         colour = accent if value < 85 else AMBER
         c.create_rectangle(x, by, x + w * max(0, min(100, value)) / 100, by + 6 * u, fill=colour,
                            outline="", tags=tag)
+
+
+# ---------- see-through windows and fonts, per system ----------
+def make_see_through(window, canvas=None):
+    """Make the window's background invisible so only what's drawn shows.
+    Windows: the KEY colour becomes see-through (and click-through). Mac: real transparency."""
+    import sys
+    if sys.platform == "win32":
+        window.attributes("-transparentcolor", KEY)
+    elif sys.platform == "darwin":
+        try:
+            window.attributes("-transparent", True)
+            window.configure(bg="systemTransparent")
+            if canvas is not None:
+                canvas.configure(bg="systemTransparent")
+        except Exception as exc:
+            print(f"(transparency not available: {exc})")
+
+
+def pick_fonts(tkfont_module, root=None):
+    """(HUD font, body font) that exist on this system."""
+    fam = set(tkfont_module.families(root) if root is not None else tkfont_module.families())
+    hud = next((f for f in ("Bahnschrift", "DIN Condensed", "DIN Alternate", "Avenir Next Condensed",
+                            "Segoe UI", "Helvetica Neue") if f in fam), "Helvetica")
+    body = next((f for f in ("Segoe UI", "Helvetica Neue", "SF Pro Text") if f in fam), "Helvetica")
+    return hud, body

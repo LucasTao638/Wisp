@@ -1,8 +1,6 @@
 """Small shared pieces for Wisp's windows: colours, switches, buttons, and saving settings."""
 import json
 import os
-import subprocess
-import sys
 import tkinter as tk
 import webbrowser
 from pathlib import Path
@@ -104,15 +102,16 @@ def open_url(url):
 
 
 def open_file(path):
-    if sys.platform == "win32":
-        os.startfile(str(path))  # opens in the default app (e.g. Notepad / browser)
+    import sysplat
+    try:
+        sysplat.open_target(str(path))  # opens in the default app
+    except Exception as exc:
+        print(f"(couldn't open {path}: {exc})")
 
 
 def restart_wisp(root=None):
     """Start a fresh copy of Wisp, then close this one."""
-    exe = Path(sys.executable)
-    pythonw = exe.with_name("pythonw.exe")
-    subprocess.Popen([str(pythonw if pythonw.exists() else exe), str(ROOT / "app.py")], cwd=ROOT,
-                     creationflags=0x00000008 if sys.platform == "win32" else 0, close_fds=True)
+    import sysplat
+    sysplat.launch_wisp(ROOT)
     if root is not None:
         root.after(200, root.destroy)

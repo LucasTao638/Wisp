@@ -140,7 +140,7 @@ class SettingsWindow:
         self.slider(r, "wake_sensitivity", 0.5, 0.3, 0.8, 0.05, restart=True)
         r = self.row("Listen for my answer after a question", "Reopens the mic when Wisp asks you something.")
         self.switch(r, "follow_up_listening", True)
-        r = self.row("Push-to-talk key")
+        r = self.row("Push-to-talk key", "e.g. f9, alt_r (Right Alt / Option), ctrl+alt+t")
         self.text(r, "talk_key", "f9", width=10, restart=True)
 
         self.section("Look")
@@ -164,8 +164,8 @@ class SettingsWindow:
         self.text(r, "hud_key", "ctrl+shift+j", width=18, restart=True)
 
         self.section("System")
-        if sys.platform == "win32":
-            r = self.row(f"Start {APP_NAME} with Windows", "Starts hidden in the tray.")
+        if sys.platform in ("win32", "darwin"):
+            r = self.row(f"Start {APP_NAME} when I log in", "Starts hidden.")
             ui.Switch(r, autostart.is_enabled(), lambda v: autostart.set_enabled(v), self.accent).pack()
         r = self.row("Share anonymous usage stats",
                      "Helps the developer improve Wisp. Never includes what you say, files or your location.")
