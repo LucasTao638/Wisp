@@ -1,7 +1,7 @@
 # Wisp installer for Windows 10/11.
 #
 # One-line install (PowerShell):
-#   irm https://raw.githubusercontent.com/LucasTao638/wisp/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex
 #
 # Or, from an unzipped download: double-click setup.bat (which runs this with -Local).
 #
@@ -11,7 +11,7 @@
 param([switch]$Local)
 
 $ErrorActionPreference = "Stop"
-$Repo = "LucasTao638/wisp"
+$Repo = "LucasTao638/Wisp"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Wisp"
 
 function Say($text, $colour = "Cyan") { Write-Host $text -ForegroundColor $colour }

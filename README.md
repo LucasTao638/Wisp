@@ -22,7 +22,7 @@ Talk to it (or type), and Wisp searches the web properly, opens and controls app
 
 **One-line install**: open PowerShell and paste:
 ```powershell
-irm https://raw.githubusercontent.com/LucasTao638/wisp/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex
 ```
 **Or** download the latest `wisp-v*.zip` from [Releases](../../releases), unzip it, and double-click **`setup.bat`**.
 
