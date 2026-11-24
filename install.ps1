@@ -1,7 +1,7 @@
 # Wisp installer for Windows 10/11.
 #
 # One-line install (PowerShell):
-#   irm https://raw.githubusercontent.com/YOUR-GITHUB-USERNAME/wisp/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex
 #
 # Or, from an unzipped download: double-click setup.bat (which runs this with -Local).
 #
@@ -11,7 +11,7 @@
 param([switch]$Local)
 
 $ErrorActionPreference = "Stop"
-$Repo = "YOUR-GITHUB-USERNAME/wisp"
+$Repo = "LucasTao638/Wisp"
 $InstallDir = Join-Path $env:LOCALAPPDATA "Wisp"
 
 function Say($text, $colour = "Cyan") { Write-Host $text -ForegroundColor $colour }
@@ -47,7 +47,11 @@ if ($Local) {
     Say "Using the files in $InstallDir"
 } else {
     Say "[1/5] Downloading the latest Wisp..."
-    $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ "User-Agent" = "Wisp-installer" }
+    try {
+        $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ "User-Agent" = "Wisp-installer" }
+    } catch {
+        throw "Couldn't find a published Wisp release at github.com/$Repo/releases (the repo may be private, or no release is published yet). Details: $($_.Exception.Message)"
+    }
     $asset = $release.assets | Where-Object { $_.name -like "*windows*.zip" } | Select-Object -First 1
     if (-not $asset) { $asset = $release.assets | Where-Object { $_.name -like "*.zip" -and $_.name -notlike "*mac*" } | Select-Object -First 1 }
     if (-not $asset) { throw "The latest release has no zip attached." }
