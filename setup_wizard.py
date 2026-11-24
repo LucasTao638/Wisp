@@ -5,6 +5,7 @@ import threading
 import tkinter as tk
 
 import autostart
+import claude_setup
 import credentials
 import i18n
 import ui_kit as ui
@@ -12,6 +13,7 @@ from app_info import APP_NAME, VERSION
 from i18n import L
 
 KEYS_URL = "https://console.anthropic.com/settings/keys"
+LIMITS_URL = "https://console.anthropic.com/settings/limits"
 
 
 class SetupWizard:
@@ -23,7 +25,7 @@ class SetupWizard:
         r = self.root
         r.title(APP_NAME)
         r.configure(bg=ui.BG)
-        r.geometry("620x580")
+        r.geometry("620x700")
         r.resizable(False, False)
         self.f = ui.fonts(r)
         self.choices = {
@@ -34,6 +36,7 @@ class SetupWizard:
             "stats": self.cfg.get("share_usage_stats", True),
         }
         self.key_ok = credentials.has_api_key()
+        self.connected = False
         self.pages = [self.page_language, self.page_welcome, self.page_key, self.page_you, self.page_listen,
                       self.page_stats, self.page_done]
         self.index = 0
@@ -115,34 +118,72 @@ class SetupWizard:
 
     def page_key(self):
         self.heading(L("Connect to Claude", "连接 Claude"),
-                     L(f"{APP_NAME}'s brain is Claude, made by Anthropic. Apps like this one use your own "
-                       "Anthropic API key: you pay Anthropic only for what you use (typically a few cents per "
-                       "request, more for big tasks), and you can set a monthly spending limit in their console.\n\n"
-                       "Your key is stored encrypted on this computer and never leaves it except to talk to Anthropic.",
-                       f"{APP_NAME} 的大脑是 Anthropic 公司的 Claude。这类应用使用你自己的 Anthropic API 密钥："
-                       "按实际用量付费（普通请求通常只要几美分，大型任务会多一些），还可以在控制台设置每月消费上限。\n\n"
-                       "密钥会加密保存在这台电脑上，只用于与 Anthropic 通信。"))
+                     L(f"{APP_NAME} needs an Anthropic API key to think. It's pay-as-you-go: "
+                       "most requests cost about a cent.",
+                       f"{APP_NAME} 需要一个 Anthropic API 密钥来思考。按用量付费：大多数请求大约一美分。"))
+        self.claude_card = claude_setup.status_card(self.body, self.f, self.accent, credentials.load_api_key,
+                                                    on_ready=self.mark_connected)
+        self.claude_card.pack(fill="x", pady=(0, 12))
+
+        # Step 1: get a key
+        self.step(1, L("Get a key", "获取密钥"),
+                  L("Sign in, add a few dollars of credit under Billing, then click “Create Key” and copy it.",
+                    "登录后在“Billing”里充值几美元，然后点击“Create Key”并复制。"))
+        ui.FlatButton(self.body, L("Open Anthropic Console", "打开 Anthropic 控制台"),
+                      lambda: ui.open_url(KEYS_URL), font=self.f["small"]).pack(anchor="w", padx=(30, 0))
+
+        # Step 2: paste it
+        self.step(2, L("Paste it here", "粘贴到这里"), None)
         row = tk.Frame(self.body, bg=ui.BG)
-        row.pack(fill="x")
-        ui.FlatButton(row, L("1. Get a key (opens Anthropic)", "1. 获取密钥（打开 Anthropic 网站）"),
-                      lambda: ui.open_url(KEYS_URL)).pack(side="left")
-        tk.Label(self.body, text=L("2. Paste it here:", "2. 粘贴到这里："), bg=ui.BG, fg=ui.DIM,
-                 font=self.f["small"], anchor="w").pack(fill="x", pady=(16, 4))
-        row2 = tk.Frame(self.body, bg=ui.BG)
-        row2.pack(fill="x")
-        self.key_entry = ui.entry(row2, "", show="•", width=44, f=self.f["body"])
-        self.key_entry.pack(side="left", ipady=6)
-        ui.FlatButton(row2, L("Check & save", "验证并保存"), self.check_key, bg=self.accent, fg="#031018",
-                      hover=self.accent).pack(side="left", padx=8)
-        self.key_status = tk.Label(self.body, bg=ui.BG, font=self.f["body"], anchor="w")
-        self.key_status.pack(fill="x", pady=10)
+        row.pack(fill="x", padx=(30, 0))
+        self.key_entry = ui.entry(row, "", show="•", width=34, f=self.f["body"])
+        self.key_entry.pack(side="left", ipady=5)
+        self.key_entry.bind("<Return>", lambda e: self.check_key())
+        ui.FlatButton(row, L("Paste", "粘贴"), self.paste_key, font=self.f["small"]).pack(side="left", padx=(6, 0))
+        ui.FlatButton(row, L("Check & save", "验证并保存"), self.check_key, bg=self.accent, fg="#031018",
+                      hover=self.accent, font=self.f["small"]).pack(side="left", padx=6)
+        self.key_status = tk.Label(self.body, bg=ui.BG, font=self.f["small"], anchor="w")
+        self.key_status.pack(fill="x", padx=(30, 0), pady=(4, 0))
         if self.key_ok:
             self.key_status.config(text=L(f"✓ A key is already saved ({credentials.masked()}).",
                                           f"✓ 已保存密钥（{credentials.masked()}）。"), fg=ui.GREEN)
-        tk.Label(self.body, text=L("Already set up Claude Code your own way? You can press Next to skip this.",
-                                   "已经用其他方式配置好 Claude Code？可以直接点下一步跳过。"),
+
+        # Step 3: spending limit
+        self.step(3, L("Set a monthly limit (recommended)", "设置每月上限（建议）"),
+                  L("So you never spend more than you planned.", "这样花费永远不会超出预算。"))
+        ui.FlatButton(self.body, L("Open spending limits", "打开消费上限设置"), lambda: ui.open_url(LIMITS_URL),
+                      font=self.f["small"]).pack(anchor="w", padx=(30, 0))
+
+        tk.Label(self.body, text=L("Your key is stored encrypted on this computer and is only ever sent to Anthropic.\n"
+                                   "Already signed in to Claude Code yourself? Click “Test connection” above: "
+                                   "if it shows ✓, you can skip the key.",
+                                   "密钥加密保存在本机，只会发送给 Anthropic。\n"
+                                   "已经自己登录了 Claude Code？点击上方“测试连接”，显示 ✓ 就可以跳过密钥。"),
                  bg=ui.BG, fg=ui.DIM, font=self.f["small"], anchor="w", wraplength=540, justify="left").pack(
-            fill="x", pady=(18, 0))
+            fill="x", pady=(14, 0))
+
+    def step(self, number, title, hint):
+        row = tk.Frame(self.body, bg=ui.BG)
+        row.pack(fill="x", pady=(10, 2))
+        tk.Label(row, text=str(number), bg=self.accent, fg="#031018", font=self.f["small"], width=2).pack(
+            side="left", padx=(0, 10))
+        tk.Label(row, text=title, bg=ui.BG, fg=ui.TEXT, font=self.f["head"], anchor="w").pack(side="left")
+        if hint:
+            tk.Label(self.body, text=hint, bg=ui.BG, fg=ui.DIM, font=self.f["small"], anchor="w", justify="left",
+                     wraplength=510).pack(fill="x", padx=(30, 0), pady=(0, 4))
+
+    def paste_key(self):
+        try:
+            text = self.root.clipboard_get().strip()
+        except tk.TclError:
+            text = ""
+        self.key_entry.delete(0, "end")
+        self.key_entry.insert(0, text)
+        if text:
+            self.check_key()
+
+    def mark_connected(self):
+        self.connected = True
 
     def check_key(self):
         key = self.key_entry.get().strip()
@@ -154,7 +195,13 @@ class SetupWizard:
                 credentials.save_api_key(key)
                 self.key_ok = True
             text = ("✓ " + L(msg + " Saved.", "密钥有效，已保存。")) if ok else ("✗ " + msg)
-            self.root.after(0, lambda: self.key_status.config(text=text, fg=ui.GREEN if ok else ui.RED))
+
+            def show():
+                if self.key_status.winfo_exists():
+                    self.key_status.config(text=text, fg=ui.GREEN if ok else ui.RED)
+                if ok and getattr(self, "claude_card", None) is not None and self.claude_card.winfo_exists():
+                    self.claude_card.test()  # prove Claude Code works with the new key
+            self.root.after(0, show)
         threading.Thread(target=work, daemon=True).start()
 
     def page_you(self):
@@ -245,9 +292,9 @@ class SetupWizard:
             row.pack(fill="x", pady=3)
             tk.Label(row, text=k, bg=ui.BG, fg=self.accent, font=self.f["head"], width=24, anchor="w").pack(side="left")
             tk.Label(row, text=what, bg=ui.BG, fg=ui.TEXT, font=self.f["body"], anchor="w").pack(side="left")
-        if not self.key_ok:
-            tk.Label(self.body, text=L("No API key saved. If Claude Code isn't set up another way, add one in Settings.",
-                                       "尚未保存 API 密钥。如果没有用其他方式配置 Claude Code，请在设置中添加。"),
+        if not (self.key_ok or self.connected):
+            tk.Label(self.body, text=L("Claude isn't connected yet. You can finish this any time in Settings > Claude.",
+                                       "Claude 尚未连接。之后可以随时在“设置 > Claude”中完成。"),
                      bg=ui.BG, fg=ui.RED, font=self.f["small"], anchor="w", wraplength=540).pack(fill="x", pady=(16, 0))
 
     # ---------- save ----------
