@@ -23,7 +23,7 @@ Talk to it (or type), and Wisp searches the web properly, opens and controls app
 ### Windows 10 / 11
 Open **PowerShell** and paste:
 ```powershell
-irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex"
 ```
 **Or** download `wisp-v…-windows.zip` from [Releases](../../releases), unzip it, and double-click **`setup.bat`**.
 
