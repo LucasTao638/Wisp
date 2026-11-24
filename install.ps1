@@ -1,9 +1,10 @@
 # Wisp installer for Windows 10/11.
 #
 # One-line install (PowerShell):
-#   irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/YOUR-GITHUB-USERNAME/wisp/main/install.ps1 | iex
 #
 # Or, from an unzipped download: double-click setup.bat (which runs this with -Local).
+# You're asked where to install it (suggested: %LOCALAPPDATA%\Wisp). Scripted installs can set $env:WISP_DIR.
 #
 # What it does: installs Python 3.13 (if needed), Wisp's Python packages, uv + Windows-MCP (app control),
 # Claude Code (Wisp's brain), then adds Start Menu / desktop shortcuts and starts Wisp.
@@ -11,8 +12,8 @@
 param([switch]$Local)
 
 $ErrorActionPreference = "Stop"
-$Repo = "LucasTao638/Wisp"
-$InstallDir = Join-Path $env:LOCALAPPDATA "Wisp"
+$Repo = "YOUR-GITHUB-USERNAME/wisp"
+$InstallDir = Join-Path $env:LOCALAPPDATA "Wisp"   # the suggested folder; you can pick another
 
 function Say($text, $colour = "Cyan") { Write-Host $text -ForegroundColor $colour }
 # Run an outside program (pip, uv, winget...). Many of them print progress on the error channel, which
@@ -41,17 +42,82 @@ function Refresh-Path {
 
 Say "`n=== Installing Wisp ===`n"
 
+# ---------- choosing where Wisp goes ----------
+$RegKey = "HKCU:\Software\Wisp"
+$Personal = @("config.json", "secrets.bin", "telemetry.json", "state.json", "timers.json", "focus.json", "phone.json",
+              "routines.json", "feedback_outbox.json", "wisp.log", "jobs", "backups")
+
+function Get-SavedDir {
+    try { return (Get-ItemProperty $RegKey -Name InstallDir -ErrorAction Stop).InstallDir } catch { return $null }
+}
+
+function Test-Writable($dir) {
+    try {
+        New-Item -ItemType Directory -Force -Path $dir -ErrorAction Stop | Out-Null
+        $probe = Join-Path $dir ".wisp-write-test"
+        Set-Content $probe "ok" -ErrorAction Stop
+        Remove-Item $probe -Force
+        return $true
+    } catch { return $false }
+}
+
+function Pick-Folder($start) {
+    Add-Type -AssemblyName System.Windows.Forms
+    $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dialog.Description = "Choose where to install Wisp. A 'Wisp' folder will be made inside the one you pick."
+    $dialog.ShowNewFolderButton = $true
+    if ($start -and (Test-Path $start)) { $dialog.SelectedPath = $start }
+    $owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }
+    $result = $dialog.ShowDialog($owner)
+    $owner.Dispose()
+    if ($result -eq [System.Windows.Forms.DialogResult]::OK) { return $dialog.SelectedPath }
+    return $null
+}
+
+function Choose-InstallDir($default, $here) {
+    if ($env:WISP_DIR) { return $env:WISP_DIR }                      # for scripted installs
+    $saved = Get-SavedDir
+    if ($saved -and (Test-Path (Join-Path $saved "core.py"))) {      # already installed: update it where it is
+        Say "Wisp is already installed in $saved - updating it there (your settings and memory are kept)."
+        return $saved
+    }
+    while ($true) {
+        Say "Wisp will be installed to:  $default" "White"
+        $prompt = "Press Enter to accept, or type C to choose another folder"
+        if ($here) { $prompt += " (or K to keep it in $here)" }
+        $answer = Read-Host $prompt
+        if ($here -and $answer -match '^\s*k') {
+            $dir = $here
+        } elseif ($answer -match '^\s*c') {
+            $picked = Pick-Folder (Split-Path $default -Parent)
+            if (-not $picked) { Say "No folder chosen." "Yellow"; continue }
+            $dir = if ((Split-Path $picked -Leaf) -ieq "Wisp") { $picked } else { Join-Path $picked "Wisp" }
+        } else {
+            $dir = $default
+        }
+        if (Test-Writable $dir) { return $dir }
+        Say "Can't save files in $dir (folders like Program Files need admin rights). Please pick another one." "Yellow"
+    }
+}
+
+function Copy-Wisp($from, $to) {
+    # Copies the program files. Personal files (settings, key, memory) are never overwritten.
+    New-Item -ItemType Directory -Force -Path $to | Out-Null
+    Get-ChildItem $from -Force | Where-Object { $Personal -notcontains $_.Name -and $_.Name -ne "__pycache__" } |
+        ForEach-Object { Copy-Item $_.FullName $to -Recurse -Force }
+}
+
 # ---------- 1. Get the files ----------
 if ($Local) {
-    $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-    Say "Using the files in $InstallDir"
+    $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+    Say "[1/5] Choosing where to install Wisp..."
+    $InstallDir = Choose-InstallDir $InstallDir $here
+    if ((Resolve-Path $InstallDir).Path.TrimEnd('\') -ne (Resolve-Path $here).Path.TrimEnd('\')) {
+        Copy-Wisp $here $InstallDir
+    }
 } else {
     Say "[1/5] Downloading the latest Wisp..."
-    try {
-        $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ "User-Agent" = "Wisp-installer" }
-    } catch {
-        throw "Couldn't find a published Wisp release at github.com/$Repo/releases (the repo may be private, or no release is published yet). Details: $($_.Exception.Message)"
-    }
+    $release = Invoke-RestMethod "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ "User-Agent" = "Wisp-installer" }
     $asset = $release.assets | Where-Object { $_.name -like "*windows*.zip" } | Select-Object -First 1
     if (-not $asset) { $asset = $release.assets | Where-Object { $_.name -like "*.zip" -and $_.name -notlike "*mac*" } | Select-Object -First 1 }
     if (-not $asset) { throw "The latest release has no zip attached." }
@@ -62,15 +128,16 @@ if ($Local) {
     Expand-Archive $zip $unpacked -Force
     $source = Get-ChildItem $unpacked -Directory | Select-Object -First 1
     if (-not (Test-Path (Join-Path $source.FullName "core.py"))) { $source = Get-Item $unpacked }
-    if (Test-Path (Join-Path $InstallDir "core.py")) {
-        Say "Wisp is already installed - updating it (your settings and memory are kept)."
+    $InstallDir = Choose-InstallDir $InstallDir $null
+    if ((Test-Path (Join-Path $InstallDir "core.py")) -and (Get-Command py -ErrorAction SilentlyContinue)) {
         Run-Tool "Updating Wisp" { py -V:3.13 (Join-Path $InstallDir "updater.py") $zip } | Out-Null
     } else {
-        New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-        Copy-Item (Join-Path $source.FullName "*") $InstallDir -Recurse -Force
+        Copy-Wisp $source.FullName $InstallDir
     }
-    Say "Installed to $InstallDir" "Green"
 }
+New-Item -Path $RegKey -Force | Out-Null
+Set-ItemProperty $RegKey -Name InstallDir -Value $InstallDir    # so updates go to the same place
+Say "Wisp's files are in $InstallDir" "Green"
 
 # ---------- 2. Python 3.13 ----------
 Say "[2/5] Checking Python 3.13..."

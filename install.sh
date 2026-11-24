@@ -1,96 +1,142 @@
 #!/bin/bash
-# Wisp installer for macOS (12 Monterey or newer; Apple Silicon or Intel).
+# Wisp installer for macOS 12+ (beta).
 #
-# One-line install (Terminal):
-#   curl -fsSL https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.sh | bash
+# Easiest: unzip wisp-v…-mac.zip and double-click "Install Wisp.command".
+# Or in Terminal:  curl -fsSL https://raw.githubusercontent.com/YOUR-GITHUB-USERNAME/wisp/main/install.sh | bash
 #
-# Or, from an unzipped download: double-click "Install Wisp.command" (which runs this with --local).
-#
-# What it does: installs uv (which brings its own Python 3.13 - your system Python isn't touched),
-# Wisp's packages, Claude Code (Wisp's brain), then creates ~/Applications/Wisp.app and opens it.
+# What it does (no admin password, nothing system-wide):
+#   1. asks where to put Wisp (suggested: ~/Library/Application Support/Wisp)
+#   2. gets Python 3.13 + Wisp's packages in a private folder (using uv)
+#   3. installs Claude Code (Wisp's brain) with Anthropic's official installer
+#   4. makes ~/Applications/Wisp.app and opens it - the setup screen does the rest.
 set -euo pipefail
 
-REPO="LucasTao638/Wisp"
-INSTALL_DIR="$HOME/Library/Application Support/Wisp"
+REPO="YOUR-GITHUB-USERNAME/wisp"
+INSTALL_DIR="$HOME/Library/Application Support/Wisp"   # suggested; you can pick another (or set WISP_DIR)
 APP="$HOME/Applications/Wisp.app"
-LOCAL=0
-[ "${1:-}" = "--local" ] && LOCAL=1
+LOCAL_BIN="$HOME/.local/bin"
+export PATH="$LOCAL_BIN:$PATH"
 
-say()  { printf "\n\033[36m%s\033[0m\n" "$1"; }
-ok()   { printf "\033[32m%s\033[0m\n" "$1"; }
-fail() { printf "\n\033[31m%s\033[0m\n" "$1"; exit 1; }
+say()  { printf "\033[36m%s\033[0m\n" "$*"; }
+good() { printf "\033[32m%s\033[0m\n" "$*"; }
+warn() { printf "\033[33m%s\033[0m\n" "$*"; }
+fail() { printf "\033[31m%s\033[0m\n" "$*"; exit 1; }
 
-[ "$(uname)" = "Darwin" ] || fail "This installer is for macOS. On Windows use install.ps1."
-
+say ""
 say "=== Installing Wisp ==="
+say ""
 
-# ---------- 1. Get the files ----------
-if [ "$LOCAL" = 1 ]; then
-    SRC="$(cd "$(dirname "$0")" && pwd)"
-    say "[1/5] Using the files in $SRC"
+# ---------- choosing where Wisp goes ----------
+ask() {  # read an answer from the keyboard, even when this script is piped in from curl
+  ANSWER=""
+  if [ -r /dev/tty ]; then read -r -p "$1" ANSWER </dev/tty || true; fi
+}
+writable() { mkdir -p "$1" 2>/dev/null && touch "$1/.wisp-write-test" 2>/dev/null && rm -f "$1/.wisp-write-test"; }
+pick_folder() {
+  osascript -e 'POSIX path of (choose folder with prompt "Choose where to install Wisp. A \"Wisp\" folder will be made inside the one you pick.")' 2>/dev/null | sed 's#/$##'
+}
+saved_dir() {  # where an earlier install put Wisp (read from Wisp.app's launcher)
+  [ -f "$APP/Contents/MacOS/Wisp" ] && sed -n 's/^DIR="\(.*\)"$/\1/p' "$APP/Contents/MacOS/Wisp" | head -1
+}
+choose_dir() {  # $1 = folder the installer is running from (offered as "keep it here"), may be empty
+  if [ -n "${WISP_DIR:-}" ]; then INSTALL_DIR="$WISP_DIR"; return; fi
+  local saved; saved="$(saved_dir || true)"
+  if [ -n "$saved" ] && [ -f "$saved/core.py" ]; then
+    say "Wisp is already installed in $saved - updating it there (your settings and memory are kept)."
+    INSTALL_DIR="$saved"; return
+  fi
+  while true; do
+    printf "Wisp will be installed to:  %s\n" "$INSTALL_DIR"
+    local prompt="Press Enter to accept, or type C to choose another folder"
+    [ -n "$1" ] && prompt="$prompt (or K to keep it in $1)"
+    ask "$prompt: "
+    local dir="$INSTALL_DIR"
+    case "$ANSWER" in
+      [Kk]*) [ -n "$1" ] && dir="$1" ;;
+      [Cc]*) local picked; picked="$(pick_folder)"
+             if [ -z "$picked" ]; then warn "No folder chosen."; continue; fi
+             if [ "$(basename "$picked")" = "Wisp" ]; then dir="$picked"; else dir="$picked/Wisp"; fi ;;
+    esac
+    if writable "$dir"; then INSTALL_DIR="$dir"; return; fi
+    warn "Can't save files in $dir. Please pick another folder."
+  done
+}
+
+# ---------- 1. Wisp's files ----------
+SCRIPT_DIR=""
+if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/core.py" ]; then
+  SOURCE="$SCRIPT_DIR"
+  say "[1/4] Choosing where to install Wisp..."
+  choose_dir "$SOURCE"
 else
-    say "[1/5] Downloading the latest Wisp..."
-    API="https://api.github.com/repos/$REPO/releases/latest"
-    URL=$(curl -fsSL "$API" | grep -o '"browser_download_url": *"[^"]*mac[^"]*\.zip"' | head -1 | sed 's/.*"\(http[^"]*\)"/\1/')
-    [ -n "$URL" ] || fail "Couldn't find a Mac download in the latest release."
-    TMP="$(mktemp -d)"
-    curl -fsSL "$URL" -o "$TMP/wisp.zip"
-    (cd "$TMP" && ditto -x -k wisp.zip unpacked)
-    SRC="$(dirname "$(find "$TMP/unpacked" -maxdepth 3 -name core.py | head -1)")"
-    [ -f "$SRC/core.py" ] || fail "The download didn't look right."
+  say "[1/4] Downloading the latest Wisp..."
+  TMP="$(mktemp -d)"
+  URL="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
+        | grep -o '"browser_download_url": *"[^"]*mac[^"]*\.zip"' | head -1 | sed 's/.*"\(http[^"]*\)"/\1/')"
+  [ -n "$URL" ] || fail "Couldn't find a Mac download in the latest release."
+  curl -fsSL "$URL" -o "$TMP/wisp.zip"
+  unzip -q "$TMP/wisp.zip" -d "$TMP/unpacked"
+  SOURCE="$(dirname "$(find "$TMP/unpacked" -maxdepth 3 -name core.py | head -1)")"
+  choose_dir ""
 fi
 
 mkdir -p "$INSTALL_DIR"
-if [ -f "$INSTALL_DIR/core.py" ] && [ "$SRC" != "$INSTALL_DIR" ]; then
-    say "Wisp is already installed - updating it (your settings and memory are kept)."
-    if [ "$LOCAL" = 1 ]; then
-        TMPZ="$(mktemp -d)/wisp.zip"; (cd "$(dirname "$SRC")" && ditto -c -k --keepParent "$(basename "$SRC")" "$TMPZ")
-    else
-        TMPZ="$TMP/wisp.zip"
-    fi
-    "$INSTALL_DIR/.venv/bin/python" "$INSTALL_DIR/updater.py" "$TMPZ" || true
-elif [ "$SRC" != "$INSTALL_DIR" ]; then
-    rsync -a "$SRC/" "$INSTALL_DIR/"
+if [ "$(cd "$SOURCE" && pwd -P)" != "$(cd "$INSTALL_DIR" && pwd -P)" ]; then
+  # Copies the program files only. Personal files (settings, memory) are never overwritten.
+  (cd "$SOURCE" && tar cf - --exclude ".venv" --exclude "__pycache__" --exclude "config.json" \
+     --exclude "*.log" --exclude "workspace/MEMORY.md" --exclude "jobs" .) | (cd "$INSTALL_DIR" && tar xf -)
 fi
 xattr -dr com.apple.quarantine "$INSTALL_DIR" 2>/dev/null || true
-chmod +x "$INSTALL_DIR"/*.command "$INSTALL_DIR"/*.sh 2>/dev/null || true
-ok "Files are in: $INSTALL_DIR"
+good "Wisp's files are in $INSTALL_DIR"
 
-# ---------- 2. uv + Python 3.13 ----------
-say "[2/5] Setting up Python 3.13 (private to Wisp)..."
-export PATH="$HOME/.local/bin:$PATH"
+# ---------- 2. Python 3.13 + packages (private to Wisp) ----------
+say "[2/4] Setting up Python 3.13 and Wisp's packages (a few minutes the first time)..."
 if ! command -v uv >/dev/null 2>&1; then
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
+  curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh >/dev/null
 fi
-uv python install 3.13
-if [ ! -x "$INSTALL_DIR/.venv/bin/python" ]; then
-    uv venv --python 3.13 "$INSTALL_DIR/.venv"
+command -v uv >/dev/null 2>&1 || fail "Couldn't install uv (the Python helper). Check your internet and try again."
+VENV="$INSTALL_DIR/.venv"
+if [ ! -x "$VENV/bin/python" ]; then
+  uv venv --quiet --python 3.13 "$VENV"
 fi
-PY="$INSTALL_DIR/.venv/bin/python"
+uv pip install --quiet --python "$VENV/bin/python" -r "$INSTALL_DIR/requirements.txt"
+"$VENV/bin/python" -c "import tkinter" 2>/dev/null || fail "Python's window toolkit (tkinter) is missing."
+good "Python and packages are ready."
 
-# ---------- 3. Packages ----------
-say "[3/5] Installing Wisp's packages (voice, hotkeys)..."
-uv pip install --python "$PY" -r "$INSTALL_DIR/requirements-mac.txt"
-
-# ---------- 4. Claude Code ----------
-say "[4/5] Installing Claude Code (Wisp's brain)..."
-if ! command -v claude >/dev/null 2>&1; then
-    curl -fsSL https://claude.ai/install.sh | bash
+# ---------- 3. Claude Code ----------
+say "[3/4] Installing Claude Code (Wisp's brain)..."
+if [ -x "$LOCAL_BIN/claude" ] || command -v claude >/dev/null 2>&1; then
+  good "Claude Code is already installed."
+else
+  if curl -fsSL https://claude.ai/install.sh | bash; then :; fi
+  if [ -x "$LOCAL_BIN/claude" ] || command -v claude >/dev/null 2>&1; then
+    good "Claude Code is installed."
+  else
+    warn "Claude Code didn't install here - no problem, Wisp's setup screen has an 'Install it for me' button."
+  fi
 fi
+# so the 'claude' command also works when you open Terminal yourself
+for RC in "$HOME/.zshrc" "$HOME/.bash_profile"; do
+  if ! grep -qs '.local/bin' "$RC"; then
+    printf '\n# Added by Wisp so the claude command works\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC"
+  fi
+done
 
-# ---------- 5. Wisp.app ----------
-say "[5/5] Creating Wisp.app..."
+# ---------- 4. Wisp.app ----------
+say "[4/4] Making Wisp.app..."
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cat > "$APP/Contents/MacOS/Wisp" <<LAUNCH
-#!/bin/bash
-export PATH="\$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:\$PATH"
-cd "$INSTALL_DIR"
-exec "$PY" "$INSTALL_DIR/app.py" "\$@"
-LAUNCH
+{
+  echo '#!/bin/bash'
+  echo '# Starts Wisp. Going through this app keeps macOS permissions (microphone etc.) attached to "Wisp".'
+  printf 'DIR="%s"\n' "$INSTALL_DIR"
+  echo 'export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"'
+  echo 'cd "$DIR" && exec "$DIR/.venv/bin/python" "$DIR/app.py" "$@"'
+} > "$APP/Contents/MacOS/Wisp"
 chmod +x "$APP/Contents/MacOS/Wisp"
-VERSION=$("$PY" -c "import sys; sys.path.insert(0, '$INSTALL_DIR'); import app_info; print(app_info.VERSION)")
-cat > "$APP/Contents/Info.plist" <<PLIST
+cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -98,50 +144,17 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>Wisp</string>
   <key>CFBundleIdentifier</key><string>com.wisp.assistant</string>
   <key>CFBundleExecutable</key><string>Wisp</string>
-  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleShortVersionString</key><string>1.0.0</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
-  <key>NSHighResolutionCapable</key><true/>
-  <key>NSMicrophoneUsageDescription</key><string>Wisp listens when you hold the talk key or say the wake phrase. Speech is turned into text on your Mac.</string>
-  <key>NSAppleEventsUsageDescription</key><string>Wisp controls apps for you when you ask it to (for example playing music or opening files).</string>
+  <key>NSMicrophoneUsageDescription</key><string>Wisp listens when you hold the talk key or say the wake phrase.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Wisp controls apps when you ask it to.</string>
 </dict></plist>
 PLIST
-# app icon (a glowing ring, drawn with Pillow)
-"$PY" - "$APP/Contents/Resources" <<'ICON' || true
-import os, subprocess, sys, tempfile
-from PIL import Image, ImageDraw, ImageFilter
-out = sys.argv[1]
-iconset = os.path.join(tempfile.mkdtemp(), "AppIcon.iconset")
-os.makedirs(iconset)
-def draw(size):
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    pad = size * 0.06
-    d.rounded_rectangle((pad, pad, size - pad, size - pad), radius=size * 0.22, fill=(7, 11, 16, 255))
-    glow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    g = ImageDraw.Draw(glow)
-    c, r = size / 2, size * 0.28
-    g.ellipse((c - r, c - r, c + r, c + r), outline=(56, 214, 255, 255), width=max(2, int(size * 0.05)))
-    g.ellipse((c - r * 0.45, c - r * 0.45, c + r * 0.45, c + r * 0.45), fill=(170, 238, 255, 255))
-    img.alpha_composite(glow.filter(ImageFilter.GaussianBlur(size * 0.03)))
-    img.alpha_composite(glow)
-    return img
-for s in (16, 32, 64, 128, 256, 512):
-    draw(s).save(os.path.join(iconset, f"icon_{s}x{s}.png"))
-    draw(s * 2).save(os.path.join(iconset, f"icon_{s}x{s}@2x.png"))
-subprocess.run(["iconutil", "-c", "icns", iconset, "-o", os.path.join(out, "AppIcon.icns")], check=True)
-ICON
-touch "$APP"
-ok "Created $APP"
+xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+good "Wisp is in your Applications folder (in your home folder)."
 
-say "Done! Opening Wisp - the setup screen will ask for your Anthropic API key."
-cat <<'NOTE'
-
-macOS will ask for a few permissions the first time - please allow them:
-  * Microphone            - so Wisp can hear you
-  * Accessibility / Input Monitoring  - for the talk key and shortcuts
-    (System Settings > Privacy & Security; turn on "Wisp", then reopen Wisp)
-  * Automation            - when Wisp controls an app for you the first time
-NOTE
+say ""
+good "Done! Opening Wisp - its setup screen connects Claude. No more typing commands."
+say "macOS will ask to allow the Microphone, Accessibility and Automation for Wisp: allow them, then reopen Wisp."
 open "$APP"
