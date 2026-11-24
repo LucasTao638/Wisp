@@ -106,3 +106,4 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 MIT licensed, see [LICENSE](LICENSE). Built on [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) by Anthropic, [Windows-MCP](https://github.com/CursorTouch/Windows-MCP), [openWakeWord](https://github.com/dscripka/openWakeWord), [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and [edge-tts](https://github.com/rany2/edge-tts).
 Wisp is an independent project and isn't affiliated with or endorsed by Anthropic, Microsoft, Apple or Marvel. "Hey Jarvis" is simply one of openWakeWord's built-in wake p
+hrases.
