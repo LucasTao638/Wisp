@@ -136,7 +136,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
   echo 'cd "$DIR" && exec "$DIR/.venv/bin/python" "$DIR/app.py" "$@"'
 } > "$APP/Contents/MacOS/Wisp"
 chmod +x "$APP/Contents/MacOS/Wisp"
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+WISP_VERSION="$(sed -n 's/^VERSION = "\(.*\)"/\1/p' "$INSTALL_DIR/app_info.py" | head -1)"
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -145,7 +146,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key><string>com.wisp.assistant</string>
   <key>CFBundleExecutable</key><string>Wisp</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0.0</string>
+  <key>CFBundleShortVersionString</key><string>${WISP_VERSION:-0.1.1}</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSMicrophoneUsageDescription</key><string>Wisp listens when you hold the talk key or say the wake phrase.</string>
   <key>NSAppleEventsUsageDescription</key><string>Wisp controls apps when you ask it to.</string>

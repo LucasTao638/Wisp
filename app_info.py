@@ -1,7 +1,7 @@
 """Everything about this copy of Wisp that the maintainer sets when publishing a release."""
 
 APP_NAME = "Wisp"
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 
 # Where updates come from: "<github-username>/<repo-name>". Change this before your first release.
 GITHUB_REPO = "LucasTao638/Wisp"
@@ -13,7 +13,7 @@ POSTHOG_HOST = "https://us.i.posthog.com"   # or https://eu.i.posthog.com if you
 
 
 def repo_configured():
-    return "YOUR-GITHUB" + "-USERNAME" not in GITHUB_REPO
+    return "YOUR-GITHUB-USERNAME" not in GITHUB_REPO
 
 
 def analytics_configured():

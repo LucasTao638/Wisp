@@ -1,10 +1,9 @@
 # Changelog
 
-## 0.1.0 (first working prototype)
-- **Fixed the grey orb with no text.** In the orb and the full-screen HUD, the letter `t` meant both "the current time" and "translate this text". The orb crashed while showing "Starting" and froze grey with no words, and the full-screen view had the same problem in two places. They now use separate names, and status and hint text show correctly in English and Chinese.
-- Windows installer: more reliable handling of pip/winget/Python messages, so harmless progress output is no longer treated as a failure.
-
-## 0.0.1 (first public release)
+## 0.1.1
+- Choose where to install Wisp (Windows and Mac); updates go to the same folder
+- One-click Claude Code setup: the setup screen and Settings find, install and test Claude Code for you (no terminal commands); Wisp finds Claude Code even when it isn't on PATH
+- Mac: double-click `Install Wisp.command` installs everything (private Python 3.13, packages, Claude Code, Wisp.app) with no admin password
 - Windows 10/11, plus a **Mac version (beta)** for macOS 12+ (Apple Silicon and Intel)
 - Voice assistant for Windows powered by Claude: wake phrase, push-to-talk, natural voices, follow-up listening
 - App control (Windows-MCP), web research, background jobs, multi-step projects
