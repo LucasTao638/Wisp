@@ -32,7 +32,6 @@ Open **Terminal** and paste:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.sh | bash
 ```
-**Or** download `wisp-v…-mac.zip` from [Releases](../../releases), unzip it, and double-click **`Install Wisp.command`** (if macOS blocks it: right-click > Open > Open).
 Wisp appears in your **Applications** folder (in your home folder). The first time, macOS asks to allow the **Microphone**, **Accessibility / Input Monitoring** (for the talk key and shortcuts) and **Automation** (when Wisp controls an app). Allow them, then reopen Wisp.
 
 The installers set up Python 3.13, Wisp's packages and Claude Code (plus Windows-MCP for app control on Windows), then open a short setup screen.
@@ -106,4 +105,4 @@ Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Credits & legal
 
 MIT licensed, see [LICENSE](LICENSE). Built on [Claude Code](https://docs.claude.com/en/docs/claude-code/overview) by Anthropic, [Windows-MCP](https://github.com/CursorTouch/Windows-MCP), [openWakeWord](https://github.com/dscripka/openWakeWord), [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and [edge-tts](https://github.com/rany2/edge-tts).
-Wisp is an independent project and isn't affiliated with or endorsed by Anthropic, Microsoft, Apple or Marvel. "Hey Jarvis" is simply one of openWakeWord's built-in wake phrases.
+Wisp is an independent project and isn't affiliated with or endorsed by Anthropic, Microsoft, Apple or Marvel. "Hey Jarvis" is simply one of openWakeWord's built-in wake p
