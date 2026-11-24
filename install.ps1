@@ -97,19 +97,46 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
     Refresh-Path
 }
-Run-Tool "Installing Windows-MCP (app control)" { uv tool install windows-mcp --python 3.13 --force } -Quiet | Out-Null
+$mcpOk = Run-Tool "Installing Windows-MCP (app control)" { uv tool install windows-mcp --python 3.13 --force } -AllowFail
+if (-not $mcpOk) {
+    # Most common cause: Wisp is still running, so Windows-MCP's files are in use and can't be replaced.
+    Say "Windows-MCP didn't install (see the message above). Closing Wisp and trying once more..." "Yellow"
+    Get-Process windows-mcp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*app.py*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+    Start-Sleep -Seconds 2
+    $mcpOk = Run-Tool "Installing Windows-MCP (app control)" { uv tool install windows-mcp --python 3.13 --force } -AllowFail
+}
+if ($mcpOk) {
+    Say "App control is installed." "Green"
+} else {
+    Say "App control (Windows-MCP) still didn't install. Wisp will still work, and will try to start it another way." "Yellow"
+    Say "Please send the message above to the developer (Wisp menu > Send feedback)." "Yellow"
+}
 
 # ---------- 5. Claude Code ----------
 Say "[5/5] Installing Claude Code (Wisp's brain)..."
 Refresh-Path
-if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
-    Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
+$claudeExe = "$env:USERPROFILE\.local\bin\claude.exe"
+if (-not (Get-Command claude -ErrorAction SilentlyContinue) -and -not (Test-Path $claudeExe)) {
+    try {
+        $old = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+        Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
+    } catch {
+        Write-Host "$_"
+    } finally { $ErrorActionPreference = $old }
     Refresh-Path
 }
 # make sure ~/.local/bin (Claude Code, uv) stays on PATH for next time
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 $localBin = "$env:USERPROFILE\.local\bin"
 if ($userPath -notlike "*$localBin*") { [Environment]::SetEnvironmentVariable("Path", "$userPath;$localBin", "User") }
+if ((Get-Command claude -ErrorAction SilentlyContinue) -or (Test-Path $claudeExe)) {
+    Say "Claude Code is installed." "Green"
+} else {
+    Say "Claude Code didn't install here - no problem, Wisp's setup screen has an 'Install it for me' button." "Yellow"
+}
 
 # ---------- shortcuts ----------
 $pyw = (& py -V:3.13 -c "import sys, os; print(os.path.join(os.path.dirname(sys.executable), 'pythonw.exe'))").Trim()
@@ -124,5 +151,5 @@ foreach ($folder in $places) {
     $lnk.Save()
 }
 
-Say "`nDone! Starting Wisp - the setup screen will ask for your Anthropic API key.`n" "Green"
+Say "`nDone! Starting Wisp - its setup screen connects Claude (no more typing commands).`n" "Green"
 Start-Process $pyw -ArgumentList "`"$(Join-Path $InstallDir 'app.py')`"" -WorkingDirectory $InstallDir
