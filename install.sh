@@ -2,7 +2,7 @@
 # Wisp installer for macOS 12+ (beta).
 #
 # Easiest: unzip wisp-v…-mac.zip and double-click "Install Wisp.command".
-# Or in Terminal:  curl -fsSL https://raw.githubusercontent.com/YOUR-GITHUB-USERNAME/wisp/main/install.sh | bash
+# Or in Terminal:  curl -fsSL https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.sh | bash
 #
 # What it does (no admin password, nothing system-wide):
 #   1. asks where to put Wisp (suggested: ~/Library/Application Support/Wisp)
@@ -11,7 +11,7 @@
 #   4. makes ~/Applications/Wisp.app and opens it - the setup screen does the rest.
 set -euo pipefail
 
-REPO="YOUR-GITHUB-USERNAME/wisp"
+REPO="LucasTao638/Wisp"
 INSTALL_DIR="$HOME/Library/Application Support/Wisp"   # suggested; you can pick another (or set WISP_DIR)
 APP="$HOME/Applications/Wisp.app"
 LOCAL_BIN="$HOME/.local/bin"
