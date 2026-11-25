@@ -158,4 +158,5 @@ good "Wisp is in your Applications folder (in your home folder)."
 say ""
 good "Done! Opening Wisp - its setup screen connects Claude. No more typing commands."
 say "macOS will ask to allow the Microphone, Accessibility and Automation for Wisp: allow them, then reopen Wisp."
-open "$APP"
+pkill -f "$INSTALL_DIR/app.py" 2>/dev/null || true   # close a copy that's already running
+open "$APP" --args --setup

@@ -33,14 +33,14 @@ threading.excepthook = lambda a: _log_crash(f"thread {a.thread.name if a.thread 
 
 cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 
-# First run: the setup screen (API key, name, voice, wake phrase, usage stats)
-if not cfg.get("setup_done") and "--startup" not in sys.argv:
+# The setup screen: on the first run, after installing (the installers pass --setup), or from the menu.
+if (not cfg.get("setup_done") or "--setup" in sys.argv) and "--startup" not in sys.argv:
     try:
         from setup_wizard import SetupWizard
         SetupWizard().run()
         cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
     except Exception as exc:
-        print(f"(setup screen failed: {exc})")
+        _log_crash("setup screen", type(exc), exc, exc.__traceback__)
 
 if cfg.get("ui", "orb") == "classic":
     from classic_ui import WispApp

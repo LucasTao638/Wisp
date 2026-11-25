@@ -223,6 +223,7 @@ class OrbApp:
             *([{"label": t("menu_update", version=self.update_info["version"]), "command": self.install_update}]
               if self.update_info else []),
             {"label": t("menu_settings"), "command": self.show_settings},
+            {"label": L("Run setup again", "重新运行设置"), "command": self.run_setup},
             {"label": t("menu_hud"), "command": self.overlay.open,
              "hint": _key_label(self.cfg.get("hud_key", "ctrl+shift+j"))},
             {"label": t("menu_conversation"), "command": self.show_transcript},
@@ -831,6 +832,12 @@ class OrbApp:
     def show_feedback(self, prefill=""):
         import feedback
         feedback.FeedbackWindow(self.root, prefill, self.accent)
+
+    def run_setup(self):
+        """Reopen the setup screen: restart Wisp with it showing first."""
+        import ui_kit
+        ui_kit.save_config({"setup_done": False})
+        ui_kit.restart_wisp(self.root)
 
     def show_settings(self):
         from settings_ui import SettingsWindow

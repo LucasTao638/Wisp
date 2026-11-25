@@ -219,4 +219,8 @@ foreach ($folder in $places) {
 }
 
 Say "`nDone! Starting Wisp - its setup screen connects Claude (no more typing commands).`n" "Green"
-Start-Process $pyw -ArgumentList "`"$(Join-Path $InstallDir 'app.py')`"" -WorkingDirectory $InstallDir
+# close any copy of Wisp that's already running, then start the new one with its setup screen
+Get-CimInstance Win32_Process -Filter "Name like 'python%.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -like "*app.py*" } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Start-Process $pyw -ArgumentList "`"$(Join-Path $InstallDir 'app.py')`" --setup" -WorkingDirectory $InstallDir
