@@ -4,6 +4,7 @@ import threading
 import tkinter as tk
 
 import autostart
+import claude_setup
 import credentials
 import i18n
 import telemetry
@@ -126,9 +127,15 @@ class SettingsWindow:
         r = self.row(L("Anthropic API key", "Anthropic API 密钥"),
                      L(f"Currently: {credentials.masked()}. Stored encrypted on this computer.",
                        f"当前：{credentials.masked()}。加密保存在本机。"))
-        ui.FlatButton(r, L("Change", "更改"), self.change_key, font=self.f["small"]).pack()
+        btns = tk.Frame(r, bg=ui.CARD)
+        btns.pack()
+        ui.FlatButton(btns, L("Change", "更改"), self.change_key, font=self.f["small"]).pack(side="left")
+        if credentials.has_api_key():
+            ui.FlatButton(btns, L("Remove", "删除"), self.remove_key, font=self.f["small"]).pack(side="left", padx=(6, 0))
         self.key_area = tk.Frame(self.body, bg=ui.BG)
         self.key_area.pack(fill="x", padx=20)
+        claude_setup.status_card(self.body, self.f, self.accent, credentials.load_api_key).pack(
+            fill="x", padx=20, pady=(6, 4))
         r = self.row(L("Model", "模型"), L("Which Claude model answers you.", "由哪个 Claude 模型回答你。"))
         self.dropdown(r, "model", models(), "sonnet", restart=True)
 
@@ -174,8 +181,20 @@ class SettingsWindow:
             c.bind("<ButtonRelease-1>", lambda e, col=colour: self.pick_colour(col))
             self.swatch_widgets.append((c, colour))
         self.pick_colour(self.cfg.get("accent_colour", ui.ACCENTS[0]), initial=True)
-        r = self.row(L("Full-screen HUD when talking", "对话时显示全屏界面"), L("Off = just the corner orb.", "关闭后只显示角落的光球。"))
-        self.switch(r, "full_hud", True)
+        r = self.row(L("When you talk to Wisp", "和 Wisp 对话时"),
+                     L("Side widget doesn't dim the screen.", "侧边小窗不会让屏幕变暗。"))
+        self.dropdown(r, "talk_view", [("widget", L("Show the side widget", "显示侧边小窗")),
+                                       ("hud", L("Show the full-screen HUD", "显示全屏界面")),
+                                       ("orb", L("Just the orb", "只显示光球"))], "widget")
+        r = self.row(L("Talking over Wisp interrupts it", "说话时打断 Wisp"),
+                     L("A new spoken request stops the current one. Off = it waits its turn.",
+                       "新的语音请求会停止当前任务。关闭后会排队等待。"))
+        self.switch(r, "talking_interrupts", True)
+        r = self.row(L("Wait if I sound unfinished", "我没说完时继续等"),
+                     L("Keeps listening after “…and” or “um”.", "听到“然后”“嗯”之类时继续听。"))
+        self.switch(r, "wait_for_unfinished", True, restart=True)
+        r = self.row(L("Pause that means I've finished", "多长的停顿算说完"), L("Seconds of quiet.", "安静的秒数。"))
+        self.slider(r, "finished_talking_pause", 1.2, 0.6, 3.0, 0.1, restart=True)
         r = self.row(L("HUD background darkness", "全屏界面背景暗度"))
         self.slider(r, "hud_dim", 0.55, 0.0, 0.9, 0.05)
         r = self.row(L("Show / hide shortcut", "显示 / 隐藏快捷键"))
@@ -245,6 +264,16 @@ class SettingsWindow:
         if not initial:
             self._set("accent_colour", colour, restart=True)
 
+    def remove_key(self):
+        """Forget the saved key, so Claude Code's own sign-in is used instead."""
+        credentials.save_api_key("")
+        self.needs_restart = True
+        for w in self.key_area.winfo_children():
+            w.destroy()
+        tk.Label(self.key_area, text=L("✓ Key removed. Wisp will use Claude Code's own sign-in after a restart.",
+                                       "✓ 密钥已删除。重启后 Wisp 将使用 Claude Code 自己的登录。"),
+                 bg=ui.BG, fg=ui.GREEN, font=self.f["small"], anchor="w").pack(fill="x", pady=4)
+
     def change_key(self):
         for w in self.key_area.winfo_children():
             w.destroy()
@@ -308,7 +337,8 @@ class SettingsWindow:
             telemetry.set_enabled(self.app.cfg, self.changes["share_usage_stats"])
         ui.save_config(self.changes)
         live = {k: v for k, v in self.changes.items()
-                if k in ("user_name", "follow_up_listening", "full_hud", "hud_dim", "share_usage_stats")}
+                if k in ("user_name", "follow_up_listening", "full_hud", "hud_dim", "share_usage_stats", "talk_view",
+                         "talking_interrupts", "widget_hide_seconds")}
         self.app.cfg.update(live)  # these apply straight away
         if self.needs_restart:
             self.status.config(text=L("Saved. Some changes need a restart.", "已保存。部分更改需要重启。"), fg=self.accent)

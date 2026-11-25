@@ -33,6 +33,9 @@ NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
 
 def find_exe(name):
     """Find an executable on PATH, or in the default per-user install folder."""
+    if name == "claude":
+        import claude_setup  # also looks in npm / Homebrew folders, for apps started without PATH
+        return claude_setup.find_claude()
     found = shutil.which(name)
     if found:
         return found
@@ -117,7 +120,7 @@ def write_mcp_config():
 def build_command(cfg, session_id=None, background=False, live=False):
     claude = find_exe("claude")
     if not claude:
-        raise RuntimeError("Claude Code isn't installed or isn't on PATH. Run setup.bat first.")
+        raise RuntimeError("Claude Code isn't installed. Open Settings > Claude and click 'Install it for me'.")
     cmd = [claude, "-p",
            "--output-format", "stream-json", "--verbose",
            "--mcp-config", str(MCP_CONFIG),
@@ -158,12 +161,30 @@ def _env():
     return env
 
 
+def kill_tree(proc):
+    """End Claude Code and everything it started (like the app-control tool), so nothing carries on."""
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True,
+                           timeout=10, creationflags=NO_WINDOW)
+        else:
+            import signal
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except Exception:
+        pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+
+
 def _start(cmd):
     proc = subprocess.Popen(
         cmd, cwd=WORKSPACE, env=_env(),
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", errors="replace", bufsize=1,
         creationflags=NO_WINDOW,
+        start_new_session=sys.platform != "win32",  # its own process group, so stopping ends everything it started
     )
     stderr_lines = []
     threading.Thread(target=lambda: stderr_lines.extend(proc.stderr), daemon=True).start()
@@ -296,7 +317,7 @@ class LiveSession:
     def stop(self):
         proc, self.proc = self.proc, None
         if proc and proc.poll() is None:
-            proc.kill()
+            kill_tree(proc)
 
     def reset(self):
         """Forget the conversation and start fresh."""

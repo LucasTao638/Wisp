@@ -81,24 +81,53 @@ def to_simplified(text):
     return text.translate(_T2S)
 
 
+# ---------------- knowing when you've finished talking ----------------
+_TRAILING_EN = {"and", "or", "but", "so", "because", "then", "the", "a", "an", "to", "of", "with", "for", "in", "on",
+                "at", "from", "about", "like", "um", "uh", "er", "erm", "hmm", "if", "when", "that", "which", "my",
+                "your", "is", "are", "can", "could", "would", "please", "also", "plus", "and then", "as well as"}
+_TRAILING_ZH = ("然后", "还有", "和", "跟", "就是", "那个", "这个", "嗯", "呃", "因为", "所以", "但是", "而且", "或者",
+                "如果", "的", "把", "给", "帮我", "再")
+
+
+def sounds_unfinished(text, lang="en"):
+    """True if a sentence was clearly cut off mid-thought ("open Spotify and...")."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if t.endswith(("...", "…", ",", "，", "、", "-", "—")):
+        return True
+    if lang == "zh":
+        return t.rstrip("。.！!？? ").endswith(_TRAILING_ZH)
+    words = re.sub(r"[^a-z' ]", " ", t.lower()).split()
+    if not words:
+        return False
+    return words[-1] in _TRAILING_EN or " ".join(words[-2:]) in _TRAILING_EN
+
+
 # ---------------- wake word ("hey jarvis") ----------------
 class WakeListener:
     """Listens all the time for a wake word using openWakeWord (free, runs on your PC, nothing is sent
-    anywhere). After the wake word, it records until you stop talking, then hands over the audio.
+    anywhere). After the wake word, it records until you've finished talking, then hands over the audio.
 
-    is_paused():        return True to ignore the wake word (e.g. while hidden or push-to-talk is on)
-    on_wake():          called when the wake word is heard
-    on_command(audio):  called with the recorded request (float32 numpy array, 16 kHz)
-    on_nothing():       called if you said the wake word and then nothing
+    is_paused():            return True to ignore the wake word (e.g. while hidden or push-to-talk is on)
+    on_wake():              called when the wake word is heard
+    on_command(audio, text): called with the recorded request (float32 numpy array, 16 kHz) and, if
+                            check_finished was given, what was said (otherwise text is None)
+    on_nothing():           called if you said the wake word and then nothing
+    check_finished(audio):  optional - returns (finished, text). Used when you pause, to keep listening
+                            if the sentence was cut off ("turn on the lights and...")
     """
 
     CHUNK = 1280  # 80 ms at 16 kHz - what openWakeWord expects
+    MAX_SECONDS = 30
 
-    def __init__(self, model_name, threshold, end_pause, is_paused, on_wake, on_command, on_nothing):
+    def __init__(self, model_name, threshold, end_pause, is_paused, on_wake, on_command, on_nothing,
+                 check_finished=None):
         self.model_name, self.threshold = model_name, float(threshold)
         self.end_pause = float(end_pause)  # seconds of quiet that means "I've finished talking"
         self.is_paused, self.on_wake = is_paused, on_wake
         self.on_command, self.on_nothing = on_command, on_nothing
+        self.check_finished = check_finished
         self.level = 0.0
         self.capturing = False
         self._listen_request = None  # set by listen_now() to open the mic without the wake word
@@ -127,7 +156,17 @@ class WakeListener:
     def _begin_capture(self, timeout):
         self.capturing = True
         self._recorded, self._heard, self._silent = [], False, 0.0
+        self._speech = 0.0          # seconds that sounded like talking
+        self._extensions = 0        # times we kept listening because the sentence wasn't finished
         self._started, self._timeout = time.time(), timeout
+
+    def _pause_needed(self):
+        """How long a pause means 'finished'. Longer after a very short phrase (you may be thinking),
+        and longer again once a sentence has been cut off."""
+        pause = self.end_pause
+        if self._speech < 1.0:
+            pause += 0.6
+        return pause + 1.0 * self._extensions
 
     def _run(self):
         import numpy as np
@@ -137,6 +176,7 @@ class WakeListener:
                                 callback=lambda data, *_: chunks.put(data[:, 0].copy()))
         noise = 0.01
         last_wake = 0.0
+        step = self.CHUNK / SAMPLE_RATE
         with stream:
             while True:
                 chunk = chunks.get()
@@ -156,27 +196,50 @@ class WakeListener:
                     if max(scores.values(), default=0) >= self.threshold and time.time() - last_wake > 2:
                         last_wake = time.time()
                         self._reset_model()
-                        self._begin_capture(5.0)
+                        self._begin_capture(6.0)
                         self.on_wake()
                     continue
 
                 # recording the request (after the wake word, or a follow-up)
                 self._recorded.append(audio)
                 self.level = min(1.0, rms * 12)
-                if rms > max(0.012, noise * 2.5):
+                loud = max(0.012, noise * 3.0)    # clearly talking
+                quiet = max(0.008, noise * 1.8)   # clearly not talking
+                if rms > loud:
                     self._heard, self._silent = True, 0.0
+                    self._speech += step
+                elif rms < quiet:
+                    self._silent += step
+                    noise = noise * 0.98 + rms * 0.02  # keep learning the room while you pause
                 else:
-                    self._silent += self.CHUNK / SAMPLE_RATE
+                    self._silent += step / 2  # in between (breathing, a soft word): counts as half a pause
                 elapsed = time.time() - self._started
-                done = (self._heard and self._silent > self.end_pause) or elapsed > 15
+                too_long = elapsed > self.MAX_SECONDS
+                paused = self._heard and self._silent > self._pause_needed()
                 gave_up = not self._heard and elapsed > self._timeout
-                if done or gave_up:
-                    self.capturing, self.level = False, 0.0
-                    self._reset_model()
-                    if self._heard:
-                        self.on_command(np.concatenate(self._recorded))
-                    else:
-                        self.on_nothing()
+                if not (paused or too_long or gave_up):
+                    continue
+
+                if gave_up:
+                    self._finish(None, None)
+                    continue
+                recording = np.concatenate(self._recorded)
+                text = None
+                if self.check_finished and not too_long:
+                    finished, text = self.check_finished(recording)
+                    if not finished and self._extensions < 2:
+                        self._extensions += 1   # "open Spotify and..." - keep listening
+                        self._silent = 0.0
+                        continue
+                self._finish(recording, text)
+
+    def _finish(self, recording, text):
+        self.capturing, self.level = False, 0.0
+        self._reset_model()
+        if recording is not None:
+            self.on_command(recording, text)
+        else:
+            self.on_nothing()
 
     def _reset_model(self):
         try:

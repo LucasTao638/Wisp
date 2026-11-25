@@ -161,10 +161,13 @@ def open_sign_in():
                               f"$host.UI.RawUI.WindowTitle = 'Claude Code sign-in'; & '{safe}'"],
                              creationflags=0x00000010)  # CREATE_NEW_CONSOLE
         elif IS_MAC:
+            # A small script opened in Terminal: unlike AppleScript, this needs no "control Terminal" permission.
+            import tempfile
             quoted = "'" + path.replace("'", "'\\''") + "'"
-            script = quoted.replace("\\", "\\\\").replace('"', '\\"')
-            subprocess.Popen(["osascript", "-e", f'tell application "Terminal" to do script "{script}"',
-                              "-e", 'tell application "Terminal" to activate'])
+            script = Path(tempfile.gettempdir()) / "Claude Code sign-in.command"
+            script.write_text("#!/bin/bash\nclear\n" + quoted + "\n", encoding="utf-8")
+            script.chmod(0o755)
+            subprocess.Popen(["open", "-a", "Terminal", str(script)])
         else:
             subprocess.Popen(["x-terminal-emulator", "-e", path])
         return True, ""

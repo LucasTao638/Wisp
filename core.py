@@ -73,6 +73,7 @@ class Assistant:
         self.last_used = 0.0
         self.session = brain.LiveSession(self.cfg, self._load_session())
         self.pending_offer = None
+        self._stop_gen = 0            # goes up every time you interrupt, so a stopped request stays quiet
 
     def emit(self, kind, text):
         for listener in list(self._listeners):
@@ -171,12 +172,26 @@ class Assistant:
         self.speaker.stop()
         self.session.stop()
 
-    def stop(self):
-        """Stop talking, and cancel the current task if there is one."""
+    def stop(self, quiet=False):
+        """Interrupt: stop talking, stop listening, cancel the current task and anything waiting."""
+        self._stop_gen += 1
         self.speaker.stop()
-        if self.busy.is_set():
-            self.session.stop()  # restarts automatically on the next request
+        was_busy = self.busy.is_set()
+        while True:                      # drop requests that were waiting their turn
+            try:
+                self.requests.get_nowait()
+            except queue.Empty:
+                break
+        if self.wake and self.wake.capturing:
+            self.wake.cancel()
+        if self.recording:
+            self.recording = False
+            self._recorder.stop()
+        if was_busy:
+            self.session.stop()  # ends Claude Code and anything it started; restarts on the next request
+        if not quiet:
             self.emit("info", t("stopped"))
+        self.emit("status", "ready")
 
     def new_chat(self):
         self.session.reset()
@@ -190,16 +205,32 @@ class Assistant:
             self.speaker.stop()
 
     # ---------- requests ----------
-    def submit(self, text, source="pc"):
+    def submit(self, text, source="pc", spoken=False):
         text = text.strip()
         if not text:
             return
         if text.startswith("/bg "):
             text = "in the background " + text[4:]
+        if spoken and self.is_stop_phrase(text):     # "stop", "never mind", "别说了"...
+            self.stop()
+            return
         self.emit("user", text)
         if self.busy.is_set():
-            self.emit("info", t("queued"))
+            if spoken and self.cfg.get("talking_interrupts", True):
+                self.stop(quiet=True)   # you started a new request by talking: drop the old one
+                self.emit("info", t("stopped"))
+            else:
+                self.emit("info", t("queued"))
         self.requests.put((text, source))
+
+    @staticmethod
+    def is_stop_phrase(text):
+        words = re.sub(r"[^\w' ]", " ", text.lower()).split()
+        phrase = " ".join(w for w in words if w not in ("jarvis", "wisp", "hey", "please", "ok", "okay"))
+        return phrase in ("stop", "stop it", "stop that", "stop talking", "cancel", "cancel that", "never mind",
+                          "nevermind", "be quiet", "quiet", "shut up", "that's enough", "thats enough", "enough",
+                          "forget it", "hold on", "wait", "abort") \
+            or text.strip("。.！! ") in ("停", "停下", "停止", "别说了", "算了", "取消", "等一下", "安静")
 
     def _worker(self):
         while True:
@@ -424,6 +455,7 @@ class Assistant:
             self.emit("info", t("conversation_reset"))
 
         self.busy.set()
+        gen = self._stop_gen
         self.emit("status", "thinking")
         telemetry.feature("ask_claude")
         started = time.time()
@@ -432,16 +464,21 @@ class Assistant:
         def on_event(kind, detail):
             if kind == "tool":
                 self.emit("tool", detail)
-            elif kind == "say":
+            elif kind == "say" and gen == self._stop_gen:
                 # The spoken line arrived while Claude is still writing - say it right away.
                 spoken_early.append(detail)
                 self._say(detail)
 
-        self._schedule_ack(spoken_early)
+        self._schedule_ack(spoken_early, gen)
         try:
             result = self.session.ask(text, on_event=on_event)
         finally:
             self.busy.clear()
+        if gen != self._stop_gen:   # you interrupted it: no error message, no reply
+            self._save_session()
+            if self.requests.empty():
+                self.emit("status", "ready")
+            return
         self.last_used = time.time()
         self._save_session()
         took = t("took", seconds=f"{time.time() - started:.1f}")
@@ -463,7 +500,7 @@ class Assistant:
             return  # already said it
         self._say(spoken)
 
-    def _schedule_ack(self, spoken_early):
+    def _schedule_ack(self, spoken_early, gen):
         """If Claude is taking a while, say a short 'One moment' so you know it heard you."""
         delay = self.cfg.get("thinking_ack_after", 2.0)
         phrases = self.cfg.get("thinking_acks", DEFAULT_ACKS)
@@ -471,7 +508,8 @@ class Assistant:
             return
 
         def ack():
-            if self.busy.is_set() and not spoken_early and not self.speaker.speaking:
+            if self.busy.is_set() and gen == self._stop_gen and not spoken_early and not self.speaker.speaking \
+                    and not self.is_listening:
                 self.speaker.speak(random.choice(phrases))
         _later(delay, ack)
 
@@ -529,10 +567,11 @@ class Assistant:
             return
         from voice import WakeListener
         listener = WakeListener(
-            name, self.cfg.get("wake_sensitivity", 0.5), self.cfg.get("end_of_speech_pause", 0.8),
+            name, self.cfg.get("wake_sensitivity", 0.5), self.cfg.get("finished_talking_pause", 1.2),
             is_paused=lambda: self.recording or not self.wake_enabled or not self.wake_allowed,
             on_wake=self._on_wake,
-            on_command=lambda audio: self._transcribe_and_submit(audio, wake=True),
+            on_command=lambda audio, text: self._transcribe_and_submit(audio, wake=True, text=text),
+            check_finished=self._check_finished if self.cfg.get("wait_for_unfinished", True) else None,
             on_nothing=lambda: self.emit("status", "thinking" if self.busy.is_set() else "ready"),
         )
         try:
@@ -578,14 +617,25 @@ class Assistant:
 
         self._transcribe_and_submit(audio)
 
-    def _transcribe_and_submit(self, audio, wake=False):
+    def _check_finished(self, audio):
+        """Called when you pause: have you actually finished? (runs on the listening thread)"""
+        from voice import sounds_unfinished, strip_wake_words
+        try:
+            text = strip_wake_words(self._transcriber.transcribe(audio))
+        except Exception:
+            return True, None
+        if text:
+            self.emit("hearing", text)   # shows what's been heard so far
+        return not sounds_unfinished(text, i18n.LANG), text
+
+    def _transcribe_and_submit(self, audio, wake=False, text=None):
         def transcribe():
-            text = self._transcriber.transcribe(audio)
+            said = text if text is not None else self._transcriber.transcribe(audio)
             if wake:
                 from voice import strip_wake_words
-                text = strip_wake_words(text)
-            if text:
-                self.submit(text)
+                said = strip_wake_words(said)
+            if said:
+                self.submit(said, spoken=True)
             else:
                 self.emit("info", t("didnt_catch"))
                 self.emit("status", "thinking" if self.busy.is_set() else "ready")

@@ -27,6 +27,7 @@ import classic_ui  # reuses its jobs window
 from hud_draw import KEY, draw_orb, hex_to_rgb, make_see_through, mix, orb_state, pick_fonts
 from hud_menu import HudMenu
 from overlay import FullHud
+from widget import TalkWidget
 from classic_ui import clean_markdown
 from core import Assistant
 
@@ -129,6 +130,7 @@ class OrbApp:
         self._start_tray()
         self._register_show_hide_key()
         self.overlay = FullHud(self)
+        self.widget = TalkWidget(self)
         if sys.platform == "darwin":  # Mac can't exclude windows from screenshots: hide them for a moment
             import context
             context.screenshot_guard = lambda: _CaptureGuard(self)
@@ -308,22 +310,26 @@ class OrbApp:
                     continue
                 if kind == "wake":
                     self.caption = t("yes")
-                    if self._full_hud_allowed():
-                        self.overlay.open()
-                    elif self.hidden and not self.auto_hidden:
+                    if not self._show_talk_view() and self.hidden and not self.auto_hidden \
+                            and self._talk_view() != "widget":
                         self.show()          # pop up while helping, then tuck away again
                         self.peeking = True
                     continue
+                if kind == "hearing":        # what's been heard so far, while you're still talking
+                    self.caption = f"“{text} …”"
+                    self.widget.on_event(kind, text)
+                    continue
                 self.log.append((kind, text))
                 self._append_transcript(kind, text)
+                self.widget.on_event(kind, text)
                 if self.overlay.is_open:
                     self.overlay.on_event(kind, text)
                 elif kind == "tool":
                     self.overlay.on_event(kind, text)  # keep the activity list up to date
                 if kind == "status":
                     self.status = text
-                    if text == "listening" and self._full_hud_allowed():
-                        self.overlay.open()
+                    if text == "listening":
+                        self._show_talk_view()
                     if text == "ready" and self.peeking:
                         self.root.after(int(self.cfg.get("peek_seconds", 6) * 1000), self._end_peek)
                     if text in ("ready", "speaking"):
@@ -343,8 +349,7 @@ class OrbApp:
                     self.caption = text
                 elif kind == "alert":  # a timer went off, or a focus session changed
                     self.caption = text
-                    if self._full_hud_allowed():
-                        self.overlay.open()
+                    self._show_talk_view()
                 elif kind == "error":
                     self.caption = text
                     self.status = "ready"
@@ -405,7 +410,7 @@ class OrbApp:
     def _capture_visibility(self, action, done):
         """Hide (then restore) Wisp's windows so a Mac screenshot shows your screen, not Wisp."""
         if action == "hide":
-            self._hidden_for_capture = [w for w in (self.root, self.overlay.dim, self.overlay.hud)
+            self._hidden_for_capture = [w for w in (self.root, self.overlay.dim, self.overlay.hud, self.widget.win)
                                         if w is not None and w.winfo_viewable()]
             for w in self._hidden_for_capture:
                 w.withdraw()
@@ -487,6 +492,22 @@ class OrbApp:
             self.root.lift()
         else:
             self.root.withdraw()
+
+    def _talk_view(self):
+        """What appears when you talk: "widget" (side panel), "hud" (full screen) or "orb" (nothing extra)."""
+        view = self.cfg.get("talk_view", "widget")
+        return view if view in ("widget", "hud", "orb") else "widget"
+
+    def _show_talk_view(self):
+        """Open the widget or HUD for a conversation. Returns True if something opened."""
+        view = self._talk_view()
+        if view == "hud" and self._full_hud_allowed():
+            self.overlay.open()
+            return True
+        if view == "widget" and not self.auto_hidden and not self.overlay.is_open:
+            self.widget.show()
+            return True
+        return False
 
     def _full_hud_allowed(self):
         """Open the big HUD when talking - but never over a fullscreen game."""

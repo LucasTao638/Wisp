@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2
+- New side widget: when you talk, a small panel appears beside the orb instead of the full-screen HUD (no dimming, nothing in the middle of the screen). It shows what Wisp heard, what it's doing and its reply, with a Stop button. Choose widget / full-screen HUD / just the orb in Settings
+- Waits until you've really finished talking: a longer, smarter pause (adapts to background noise), a little extra time after short phrases, and it keeps listening if you trail off ("open Spotify and…", "um")
+- Interrupt any time: the Stop button, F10, Esc, or just say "stop" / "never mind" (“停” / “别说了”). Talking over Wisp with a new request stops the old one instead of queuing it
+- Stopping is clean now: no "something went wrong" afterwards, and anything Claude was doing in your apps stops too
+
 ## 0.1.1
 - Choose where to install Wisp (Windows and Mac); updates go to the same folder
 - One-click Claude Code setup: the setup screen and Settings find, install and test Claude Code for you (no terminal commands); Wisp finds Claude Code even when it isn't on PATH

@@ -52,6 +52,11 @@ class SetupWizard:
             (self.page_done, ("Done", "完成")),
         ]
         self.index = 0
+        # bring the window to the front (on a Mac it can otherwise open behind other windows)
+        r.lift()
+        r.attributes("-topmost", True)
+        r.after(800, lambda: r.attributes("-topmost", False))
+        r.after(100, r.focus_force)
 
         # top: step counter + progress bar
         top = tk.Frame(r, bg=ui.BG)
@@ -178,13 +183,15 @@ class SetupWizard:
 
     # ---------- 1. language ----------
     def page_language(self):
-        self.heading("Language  ·  语言",
-                     "Choose the language you'll speak to Wisp in.\n选择你和 Wisp 对话的语言。")
+        # English until someone picks 中文 - then this page (and everything after) switches to Chinese.
+        self.heading(L("Choose your language", "选择语言"),
+                     L("This is the language you'll speak to Wisp in. You can change it later in Settings.",
+                       "这是你和 Wisp 对话时使用的语言。之后可以在设置中更改。"))
         for code, label in i18n.LANGUAGES.items():
             self.choice(self.body, label, None, i18n.LANG == code, lambda c=code: self.pick_language(c))
-        self.note(self.body, "Wake phrases (“Hey Jarvis”) are English-only for now; holding the talk key works "
-                             "in any language.\n唤醒词（“Hey Jarvis”）目前只有英文；按住说话键可以使用任何语言。",
-                  pady=(18, 0))
+        self.note(self.body, L("Wake phrases (“Hey Jarvis”) are English-only for now; holding the talk key works "
+                               "in any language.",
+                               "唤醒词（“Hey Jarvis”）目前只有英文；按住说话键可以使用任何语言。"), pady=(18, 0))
 
     def pick_language(self, code):
         i18n.apply_language(code, ui.save_config)
