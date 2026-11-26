@@ -90,6 +90,7 @@ if [ "$(cd "$SOURCE" && pwd -P)" != "$(cd "$INSTALL_DIR" && pwd -P)" ]; then
      --exclude "*.log" --exclude "workspace/MEMORY.md" --exclude "jobs" .) | (cd "$INSTALL_DIR" && tar xf -)
 fi
 xattr -dr com.apple.quarantine "$INSTALL_DIR" 2>/dev/null || true
+[ -f "$INSTALL_DIR/app.py" ] || fail "Wisp's files didn't copy into $INSTALL_DIR (copied from: $SOURCE). Please send this message to the developer."
 good "Wisp's files are in $INSTALL_DIR"
 
 # ---------- 2. Python 3.13 + packages (private to Wisp) ----------
@@ -102,7 +103,17 @@ VENV="$INSTALL_DIR/.venv"
 if [ ! -x "$VENV/bin/python" ]; then
   uv venv --quiet --python 3.13 "$VENV"
 fi
-uv pip install --quiet --python "$VENV/bin/python" -r "$INSTALL_DIR/requirements.txt"
+# Wisp's package list. Uses requirements.txt when the download has it, otherwise this built-in copy.
+REQS="$INSTALL_DIR/requirements.txt"
+if [ ! -f "$REQS" ] && [ -f "$SOURCE/requirements.txt" ]; then
+  cp "$SOURCE/requirements.txt" "$REQS"
+fi
+if [ ! -f "$REQS" ]; then
+  warn "(requirements.txt wasn't in the download - using the built-in package list)"
+  REQS="$(mktemp)"
+  printf '%s\n' faster-whisper sounddevice numpy edge-tts pillow openwakeword pynput > "$REQS"
+fi
+uv pip install --quiet --python "$VENV/bin/python" -r "$REQS"
 "$VENV/bin/python" -c "import tkinter" 2>/dev/null || fail "Python's window toolkit (tkinter) is missing."
 good "Python and packages are ready."
 
@@ -146,7 +157,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>com.wisp.assistant</string>
   <key>CFBundleExecutable</key><string>Wisp</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${WISP_VERSION:-0.1.1}</string>
+  <key>CFBundleShortVersionString</key><string>${WISP_VERSION:-0.1.2}</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSMicrophoneUsageDescription</key><string>Wisp listens when you hold the talk key or say the wake phrase.</string>
   <key>NSAppleEventsUsageDescription</key><string>Wisp controls apps when you ask it to.</string>
