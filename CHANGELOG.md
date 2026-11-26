@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+- Anonymous usage stats and feedback are now switched on for real, so problems and ideas people send actually reach the developer (still optional: turn it off any time in Settings, see PRIVACY.md)
+- Uninstaller, Mac permission buttons and installer fixes from 0.1.3 are included
+
 ## 0.1.3
 - Conversation mode: after each reply Wisp keeps listening for a few seconds, so you can just carry on talking - no "Hey Jarvis" every time. Say "thanks, that's all" (“谢谢，没事了”) or stay quiet to finish. Background noise and coughs don't count
 - Talks like a person: Wisp's replies are now casual and natural, react to what you said, remember the conversation ("what about tomorrow?") and sometimes ask something back - no more "Certainly!" or "anything else?"

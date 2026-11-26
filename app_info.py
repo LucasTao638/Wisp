@@ -1,14 +1,14 @@
 """Everything about this copy of Wisp that the maintainer sets when publishing a release."""
 
 APP_NAME = "Wisp"
-VERSION = "0.1.3"
+VERSION = "0.1.4"
 
 # Where updates come from: "<github-username>/<repo-name>". Change this before your first release.
 GITHUB_REPO = "LucasTao638/Wisp"
 
 # Anonymous usage stats (PostHog). Paste your PostHog *project* API key here (it starts with "phc_").
 # It's safe to publish: it can only send events, not read them. Leave it as-is to send nothing.
-POSTHOG_KEY = "phc_REPLACE_ME"
+POSTHOG_KEY = "phc_tYMRuXJXGNZrHzxdQsxH7jtGRoteRxUgpPd749V4UKDg"
 POSTHOG_HOST = "https://us.i.posthog.com"   # or https://eu.i.posthog.com if your PostHog project is in the EU
 
 
