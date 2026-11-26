@@ -46,6 +46,9 @@
   "finished_talking_pause": 1.2,
   "wait_for_unfinished": true,
   "talking_interrupts": true,
+  "conversation_mode": true,
+  "conversation_seconds": 8,
+  "headphones_mode": false,
   "thinking_ack_after": 2.0,
   "thinking_acks": [
     "One moment.",

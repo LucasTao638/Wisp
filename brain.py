@@ -80,7 +80,7 @@ LANGUAGE_GUIDES = {
 - Spoken lines should sound natural when read aloud: short sentences, no English abbreviations or symbols
   unless needed; write numbers the way they'd be said.
 - Search the web in whichever language gives the best results, but answer in Chinese.
-- Keep your polite, composed butler style (礼貌、沉稳、简洁).
+- Talk naturally, like a friendly person chatting (自然、口语化、简洁), not like a formal assistant. Use everyday spoken Chinese (比如“好嘞”“搞定了”“嗯，我看看”), and never say things like “请问还有什么可以帮您”.
 """,
 }
 

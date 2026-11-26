@@ -170,6 +170,28 @@ class SettingsWindow:
                                                          "例如 f9、alt_r（右 Alt / Option）、ctrl+alt+t"))
         self.text(r, "talk_key", "f9", width=10, restart=True)
 
+        r = self.row(L("Conversation mode", "对话模式"),
+                     L("After each reply, keep listening so you can just carry on - no wake phrase. "
+                       "Say “that's all” or stay quiet to finish.",
+                       "每次回答后继续听，你可以直接接着说，不用唤醒词。说“没事了”或不说话即结束。"))
+        self.switch(r, "conversation_mode", True)
+        r = self.row(L("Keep listening for", "继续听多久"), L("Seconds after each reply.", "每次回答后的秒数。"))
+        self.slider(r, "conversation_seconds", 8, 4, 20, 1)
+        r = self.row(L("I use headphones", "我戴耳机"),
+                     L("Then you can just start talking while Wisp is speaking to interrupt it. "
+                       "(Leave off with speakers: Wisp would hear itself.)",
+                       "这样 Wisp 说话时你直接开口就能打断它。（用扬声器时请关闭，否则 Wisp 会听到自己。）"))
+        self.switch(r, "headphones_mode", False)
+        r = self.row(L("Talking over Wisp interrupts it", "说话时打断 Wisp"),
+                     L("A new spoken request stops the current one. Off = it waits its turn.",
+                       "新的语音请求会停止当前任务。关闭后会排队等待。"))
+        self.switch(r, "talking_interrupts", True)
+        r = self.row(L("Wait if I sound unfinished", "我没说完时继续等"),
+                     L("Keeps listening after “…and” or “um”.", "听到“然后”“嗯”之类时继续听。"))
+        self.switch(r, "wait_for_unfinished", True, restart=True)
+        r = self.row(L("Pause that means I've finished", "多长的停顿算说完"), L("Seconds of quiet.", "安静的秒数。"))
+        self.slider(r, "finished_talking_pause", 1.2, 0.6, 3.0, 0.1, restart=True)
+
         self.section(L("Look", "外观"))
         r = self.row(L("Colour", "颜色"))
         swatches = tk.Frame(r, bg=ui.CARD)
@@ -186,15 +208,6 @@ class SettingsWindow:
         self.dropdown(r, "talk_view", [("widget", L("Show the side widget", "显示侧边小窗")),
                                        ("hud", L("Show the full-screen HUD", "显示全屏界面")),
                                        ("orb", L("Just the orb", "只显示光球"))], "widget")
-        r = self.row(L("Talking over Wisp interrupts it", "说话时打断 Wisp"),
-                     L("A new spoken request stops the current one. Off = it waits its turn.",
-                       "新的语音请求会停止当前任务。关闭后会排队等待。"))
-        self.switch(r, "talking_interrupts", True)
-        r = self.row(L("Wait if I sound unfinished", "我没说完时继续等"),
-                     L("Keeps listening after “…and” or “um”.", "听到“然后”“嗯”之类时继续听。"))
-        self.switch(r, "wait_for_unfinished", True, restart=True)
-        r = self.row(L("Pause that means I've finished", "多长的停顿算说完"), L("Seconds of quiet.", "安静的秒数。"))
-        self.slider(r, "finished_talking_pause", 1.2, 0.6, 3.0, 0.1, restart=True)
         r = self.row(L("HUD background darkness", "全屏界面背景暗度"))
         self.slider(r, "hud_dim", 0.55, 0.0, 0.9, 0.05)
         r = self.row(L("Show / hide shortcut", "显示 / 隐藏快捷键"))
@@ -338,7 +351,8 @@ class SettingsWindow:
         ui.save_config(self.changes)
         live = {k: v for k, v in self.changes.items()
                 if k in ("user_name", "follow_up_listening", "full_hud", "hud_dim", "share_usage_stats", "talk_view",
-                         "talking_interrupts", "widget_hide_seconds")}
+                         "talking_interrupts", "widget_hide_seconds", "conversation_mode", "conversation_seconds",
+                         "headphones_mode")}
         self.app.cfg.update(live)  # these apply straight away
         if self.needs_restart:
             self.status.config(text=L("Saved. Some changes need a restart.", "已保存。部分更改需要重启。"), fg=self.accent)

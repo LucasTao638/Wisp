@@ -65,6 +65,7 @@ class TalkWidget:
         close.bind("<ButtonRelease-1>", lambda e: self.hide())
 
         self.meter = tk.Canvas(card, height=int(22 * s), bg=PANEL, highlightthickness=0)
+        self.hint_label = tk.Label(card, bg=PANEL, fg=ui.DIM, font=a.f_small, anchor="w")
         wrap = int((self.WIDTH - 34) * s)
         self.you = tk.Label(card, bg=PANEL, fg=SOFT, font=a.f_caption, anchor="w", justify="left", wraplength=wrap)
         self.step = tk.Label(card, bg=PANEL, fg=ui.DIM, font=a.f_small, anchor="w", justify="left", wraplength=wrap)
@@ -87,7 +88,7 @@ class TalkWidget:
             pass
         if sys.platform == "win32":
             self._round_corners()
-        self.you_text = self.step_text = self.reply_text = ""
+        self.you_text = self.step_text = self.reply_text = self.hint_text = ""
         self.reply_colour = ui.TEXT
         self._render()
         self._tick()
@@ -202,11 +203,14 @@ class TalkWidget:
         self.state_label.config(text=L(en, zh).upper(), fg=colour)
         self._dot_colour = colour
 
-        for w in (self.meter, self.you, self.step, self.reply, self.bottom):
+        for w in (self.meter, self.hint_label, self.you, self.step, self.reply, self.bottom):
             w.pack_forget()
         pad = (int(8 * self.s), 0)
         if self.state == "listening":
             self.meter.pack(fill="x", pady=pad)
+            if self.hint_text:
+                self.hint_label.config(text=self.hint_text)
+                self.hint_label.pack(fill="x", pady=(int(4 * self.s), 0))
         if self.you_text and not self.compact:
             self.you.config(text=f"“{self.you_text}”")
             self.you.pack(fill="x", pady=pad)
@@ -267,11 +271,16 @@ class TalkWidget:
             else:
                 self._cancel_hide()
             if text == "listening":
-                self.you_text = self.reply_text = self.step_text = ""
+                # start fresh; if this turns out to be a conversation follow-up, the hint brings the reply back
+                self._last = (self.you_text, self.reply_text, self.reply_colour)
+                self.you_text = self.reply_text = self.step_text = self.hint_text = ""
+        elif kind == "hint":
+            self.hint_text = text
+            self.you_text, self.reply_text, self.reply_colour = getattr(self, "_last", ("", "", ui.TEXT))
         elif kind == "hearing":
             self.you_text = text + " …"
         elif kind == "user":
-            self.you_text, self.reply_text, self.step_text = text, "", ""
+            self.you_text, self.reply_text, self.step_text, self.hint_text = text, "", "", ""
             self.reply_colour = ui.TEXT
         elif kind == "tool":
             if not text.startswith("took "):

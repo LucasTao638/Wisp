@@ -315,6 +315,10 @@ class OrbApp:
                         self.show()          # pop up while helping, then tuck away again
                         self.peeking = True
                     continue
+                if kind == "hint":           # "Go ahead, or say that's all" during a conversation
+                    self.caption = text
+                    self.widget.on_event(kind, text)
+                    continue
                 if kind == "hearing":        # what's been heard so far, while you're still talking
                     self.caption = f"“{text} …”"
                     self.widget.on_event(kind, text)

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+- Conversation mode: after each reply Wisp keeps listening for a few seconds, so you can just carry on talking - no "Hey Jarvis" every time. Say "thanks, that's all" (“谢谢，没事了”) or stay quiet to finish. Background noise and coughs don't count
+- Talks like a person: Wisp's replies are now casual and natural, react to what you said, remember the conversation ("what about tomorrow?") and sometimes ask something back - no more "Certainly!" or "anything else?"
+- Headphones option: wearing headphones? Just start talking while Wisp is speaking and it stops to listen
+- Settings for all of these under Settings > Listening
+
 ## 0.1.2
 - New side widget: when you talk, a small panel appears beside the orb instead of the full-screen HUD (no dimming, nothing in the middle of the screen). It shows what Wisp heard, what it's doing and its reply, with a Stop button. Choose widget / full-screen HUD / just the orb in Settings
 - Waits until you've really finished talking: a longer, smarter pause (adapts to background noise), a little extra time after short phrases, and it keeps listening if you trail off ("open Spotify and…", "um")

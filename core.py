@@ -35,8 +35,9 @@ def load_config():
     return json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 
 
-DEFAULT_ACKS = ["One moment.", "Right away.", "On it.", "Just a moment."]
+DEFAULT_ACKS = ["One sec.", "On it.", "Let me have a look.", "Hmm, let me check."]
 t = i18n.t
+L = i18n.L
 
 
 def _later(seconds, fn):
@@ -74,6 +75,8 @@ class Assistant:
         self.session = brain.LiveSession(self.cfg, self._load_session())
         self.pending_offer = None
         self._stop_gen = 0            # goes up every time you interrupt, so a stopped request stays quiet
+        self.in_conversation = False  # you're talking with Wisp: it keeps listening after each reply
+        self._following_up = False    # the mic is open for your reply (no wake phrase needed)
 
     def emit(self, kind, text):
         for listener in list(self._listeners):
@@ -175,6 +178,7 @@ class Assistant:
     def stop(self, quiet=False):
         """Interrupt: stop talking, stop listening, cancel the current task and anything waiting."""
         self._stop_gen += 1
+        self.in_conversation = self._following_up = False
         self.speaker.stop()
         was_busy = self.busy.is_set()
         while True:                      # drop requests that were waiting their turn
@@ -212,8 +216,13 @@ class Assistant:
         if text.startswith("/bg "):
             text = "in the background " + text[4:]
         if spoken and self.is_stop_phrase(text):     # "stop", "never mind", "别说了"...
+            self.in_conversation = False
             self.stop()
             return
+        if spoken and self.is_end_phrase(text):      # "thanks, that's all", "谢谢，没事了"...
+            self.end_conversation(text)
+            return
+        self.in_conversation = spoken and self.cfg.get("conversation_mode", True)
         self.emit("user", text)
         if self.busy.is_set():
             if spoken and self.cfg.get("talking_interrupts", True):
@@ -222,6 +231,45 @@ class Assistant:
             else:
                 self.emit("info", t("queued"))
         self.requests.put((text, source))
+
+    @staticmethod
+    def is_phantom(text):
+        """Things speech-to-text tends to make up from background noise."""
+        t_ = re.sub(r"[^\w' ]", " ", (text or "").lower()).strip()
+        return t_ in ("", "you", "thanks for watching", "thank you for watching", "subscribe", "bye bye bye",
+                      "please subscribe", "thank you so much for watching", "字幕", "谢谢观看", "请订阅") \
+            or bool(re.fullmatch(r"[\W_]*", text or ""))
+
+    @staticmethod
+    def is_end_phrase(text):
+        """'Thanks, that's all' - the conversation is over (only when that's all you said)."""
+        words = re.sub(r"[^\w' ]", " ", text.lower()).split()
+        phrase = " ".join(w for w in words if w not in ("jarvis", "wisp", "ok", "okay", "great", "perfect",
+                                                        "cool", "awesome", "alright", "right", "mate"))
+        return phrase in ("thanks", "thank you", "thanks that's all", "thank you that's all", "that's all",
+                          "that's it", "thats all", "thats it", "that's all thanks", "that's it thanks", "bye",
+                          "goodbye", "bye bye", "see you", "no thanks", "no thank you", "nothing", "nothing else",
+                          "i'm good", "im good", "all good", "cheers", "i'm done", "im done", "we're done",
+                          "no that's all", "no that's it", "that'll be all", "that will be all", "thanks bye",
+                          "thank you bye", "good night", "goodnight") \
+            or text.strip("。.！!，, ") in ("谢谢", "谢了", "没事了", "就这样", "就这些", "再见", "好的谢谢", "好的，谢谢",
+                                            "没有了", "不用了", "拜拜", "晚安", "谢谢，没事了", "谢谢，就这样")
+
+    def end_conversation(self, text=""):
+        """You said "that's all": reply briefly, stop listening for follow-ups."""
+        self.in_conversation = False
+        self.emit("user", text)
+        import random
+        low = text.lower()
+        if i18n.is_zh():
+            line = random.choice(["好的，随时叫我。", "不客气。", "随时吩咐。"])
+        elif "night" in low:
+            line = "Good night."
+        elif "bye" in low or "see you" in low:
+            line = random.choice(["Bye for now.", "See you."])
+        else:
+            line = random.choice(["Anytime.", "No problem.", "Happy to help.", "You're welcome."])
+        self._say(line)
 
     @staticmethod
     def is_stop_phrase(text):
@@ -251,8 +299,12 @@ class Assistant:
 
             def done():
                 self.emit("status", self._idle_status())
-                if self._is_question(text) and self.source == "pc":
+                if self.source != "pc":
+                    return
+                if self._is_question(text):
                     self._follow_up()
+                elif self.in_conversation:
+                    self._follow_up(conversation=True)
             self.speaker.speak(text, on_done=done)
         else:
             self.emit("status", self._idle_status())
@@ -323,11 +375,13 @@ class Assistant:
     def _is_question(text):
         return text.strip().strip("\"'”’)").endswith("?")
 
-    def _follow_up(self):
-        """Wisp asked something: open the mic so you can just answer (closes again if you say nothing)."""
+    def _follow_up(self, conversation=False):
+        """Open the mic so you can just answer - after Wisp asks something, or after every reply while you're
+        in a conversation. Closes again quietly if you say nothing."""
         if not self.cfg.get("follow_up_listening", True) or not self.wake or self.recording \
                 or not self.wake_allowed:
             return
+        seconds = self.cfg.get("conversation_seconds", 8) if conversation else self.cfg.get("follow_up_seconds", 6)
 
         def go():
             for _ in range(600):  # if Claude is still finishing the written part, wait for it (max 60s)
@@ -336,13 +390,16 @@ class Assistant:
                 time.sleep(0.1)
             if self.busy.is_set() or self.speaker.speaking or self.is_listening:
                 return
-            if self.cfg.get("wake_chime", True):
+            if self.cfg.get("wake_chime", True) and (not conversation or self.cfg.get("conversation_chime", False)):
                 sysplat.chime("blip")  # a soft, short blip: "I'm listening"
-            time.sleep(0.15)  # let the chime finish so it isn't recorded
+            time.sleep(0.15)  # let the chime (or the end of Wisp's voice) finish so it isn't recorded
             if self.speaker.speaking or self.busy.is_set() or self.is_listening:
                 return
+            self._following_up = True
             self.emit("status", "listening")
-            self.wake.listen_now(self.cfg.get("follow_up_seconds", 6))
+            if conversation:
+                self.emit("hint", L("Go ahead, or say “that's all”.", "请继续说，或者说“没事了”。"))
+            self.wake.listen_now(seconds, min_speech=0.35)
         threading.Thread(target=go, daemon=True).start()
 
     @staticmethod
@@ -572,7 +629,10 @@ class Assistant:
             on_wake=self._on_wake,
             on_command=lambda audio, text: self._transcribe_and_submit(audio, wake=True, text=text),
             check_finished=self._check_finished if self.cfg.get("wait_for_unfinished", True) else None,
-            on_nothing=lambda: self.emit("status", "thinking" if self.busy.is_set() else "ready"),
+            on_nothing=self._on_nothing,
+            can_barge_in=lambda: bool(self.cfg.get("headphones_mode")) and self.speaker.speaking
+                and self.wake_allowed and not self.recording,
+            on_barge_in=self._on_barge_in,
         )
         try:
             listener.load()
@@ -586,8 +646,22 @@ class Assistant:
         self.wake = listener
         self.emit("info", t("wake_ready", phrase=name.replace("_", " ").title()))
 
+    def _on_nothing(self):
+        """You said nothing after the wake phrase, or didn't reply to a follow-up: close quietly."""
+        if self._following_up:
+            self.in_conversation = False
+        self._following_up = False
+        self.emit("status", "thinking" if self.busy.is_set() else "ready")
+
+    def _on_barge_in(self):
+        """Headphones mode: you started talking while Wisp was speaking - stop and listen."""
+        self.speaker.stop()
+        self._following_up = False
+        self.emit("status", "listening")
+
     def _on_wake(self):
         telemetry.feature("wake_word")
+        self._following_up = False
         self.speaker.stop()
         self.emit("status", "listening")
         self.emit("wake", "")
@@ -599,6 +673,7 @@ class Assistant:
             return  # also ignores key auto-repeat
         if self.wake and self.wake.capturing:
             self.wake.cancel()
+        self._following_up = False
         self.speaker.stop()
         telemetry.feature("push_to_talk")
         self.recording = True
@@ -629,13 +704,20 @@ class Assistant:
         return not sounds_unfinished(text, i18n.LANG), text
 
     def _transcribe_and_submit(self, audio, wake=False, text=None):
+        following_up, self._following_up = self._following_up, False   # was this a reply to a follow-up?
+
         def transcribe():
             said = text if text is not None else self._transcriber.transcribe(audio)
             if wake:
                 from voice import strip_wake_words
                 said = strip_wake_words(said)
+            if following_up and self.is_phantom(said):
+                said = ""   # speech-to-text "heard" something in near-silence: ignore it
             if said:
                 self.submit(said, spoken=True)
+            elif following_up:
+                self.in_conversation = False   # nothing real was said: the conversation's over, quietly
+                self.emit("status", "thinking" if self.busy.is_set() else "ready")
             else:
                 self.emit("info", t("didnt_catch"))
                 self.emit("status", "thinking" if self.busy.is_set() else "ready")

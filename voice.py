@@ -5,6 +5,7 @@ Test a voice:   py -V:3.13 voice.py "Good evening. All systems are online."
 import asyncio
 import json
 import os
+import collections
 import queue
 import re
 import subprocess
@@ -116,18 +117,22 @@ class WakeListener:
     on_nothing():           called if you said the wake word and then nothing
     check_finished(audio):  optional - returns (finished, text). Used when you pause, to keep listening
                             if the sentence was cut off ("turn on the lights and...")
+    can_barge_in():         optional - return True while Wisp is talking AND you use headphones: then just
+                            starting to talk interrupts Wisp (on_barge_in is called) and it listens
     """
 
     CHUNK = 1280  # 80 ms at 16 kHz - what openWakeWord expects
     MAX_SECONDS = 30
 
     def __init__(self, model_name, threshold, end_pause, is_paused, on_wake, on_command, on_nothing,
-                 check_finished=None):
+                 check_finished=None, can_barge_in=None, on_barge_in=None):
         self.model_name, self.threshold = model_name, float(threshold)
         self.end_pause = float(end_pause)  # seconds of quiet that means "I've finished talking"
         self.is_paused, self.on_wake = is_paused, on_wake
         self.on_command, self.on_nothing = on_command, on_nothing
         self.check_finished = check_finished
+        self.can_barge_in, self.on_barge_in = can_barge_in, on_barge_in
+        self.min_speech = 0.0        # a follow-up needs at least this much talking (ignores coughs, clicks, TV)
         self.level = 0.0
         self.capturing = False
         self._listen_request = None  # set by listen_now() to open the mic without the wake word
@@ -149,8 +154,9 @@ class WakeListener:
         self.capturing = False
         self._listen_request = None
 
-    def listen_now(self, timeout=6.0):
+    def listen_now(self, timeout=6.0, min_speech=0.0):
         """Open the mic for a reply without needing the wake word (e.g. after a question)."""
+        self._pending_min_speech = float(min_speech)
         self._listen_request = float(timeout)
 
     def _begin_capture(self, timeout):
@@ -177,6 +183,8 @@ class WakeListener:
         noise = 0.01
         last_wake = 0.0
         step = self.CHUNK / SAMPLE_RATE
+        preroll = collections.deque(maxlen=8)   # the last ~0.6 s, so the start of a barge-in isn't lost
+        barge = 0.0
         with stream:
             while True:
                 chunk = chunks.get()
@@ -185,10 +193,26 @@ class WakeListener:
 
                 if not self.capturing and self._listen_request is not None:
                     self._begin_capture(self._listen_request)  # follow-up: listen straight away
+                    self.min_speech = getattr(self, "_pending_min_speech", 0.0)
                     self._listen_request = None
                     self._reset_model()
 
                 if not self.capturing:
+                    preroll.append(audio)
+                    if self.can_barge_in and self.can_barge_in():
+                        # Wisp is talking and you wear headphones: you starting to talk interrupts it
+                        barge = barge + step if rms > max(0.02, noise * 4.0) else max(0.0, barge - step)
+                        if barge >= 0.3:
+                            barge = 0.0
+                            self._begin_capture(6.0)
+                            self._recorded = list(preroll)
+                            self._heard, self._speech = True, 0.3
+                            self.min_speech = 0.0
+                            self._reset_model()
+                            if self.on_barge_in:
+                                self.on_barge_in()
+                        continue
+                    barge = 0.0
                     noise = noise * 0.97 + rms * 0.03  # track background noise
                     if self.is_paused():
                         continue
@@ -197,6 +221,7 @@ class WakeListener:
                         last_wake = time.time()
                         self._reset_model()
                         self._begin_capture(6.0)
+                        self.min_speech = 0.0
                         self.on_wake()
                     continue
 
@@ -220,8 +245,8 @@ class WakeListener:
                 if not (paused or too_long or gave_up):
                     continue
 
-                if gave_up:
-                    self._finish(None, None)
+                if gave_up or (self._speech < self.min_speech and not too_long):
+                    self._finish(None, None)   # nothing (or just a cough / a click) - close quietly
                     continue
                 recording = np.concatenate(self._recorded)
                 text = None
