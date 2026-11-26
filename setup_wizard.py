@@ -408,6 +408,26 @@ class SetupWizard:
         if sys.platform in ("win32", "darwin"):
             self.switch_row(L(f"Start {APP_NAME} when I log in", f"登录时自动启动 {APP_NAME}"),
                             self.choices["autostart"], lambda v: self.choices.update(autostart=v))
+        if sys.platform == "darwin":
+            self.mac_permissions()
+
+    def mac_permissions(self):
+        """macOS asks for these the first time Wisp needs them. If a prompt was missed or refused, fix it here."""
+        card = tk.Frame(self.body, bg=ui.CARD, padx=16, pady=10)
+        card.pack(fill="x", pady=(14, 0))
+        tk.Label(card, text=L("Mac permissions", "Mac 权限"), bg=ui.CARD, fg=ui.TEXT, font=self.f["head"],
+                 anchor="w").pack(fill="x")
+        tk.Label(card, text=L("macOS asks for these when Wisp first needs them. Missed one, or clicked "
+                              "“Don't Allow”? Open it here and switch Wisp on.",
+                              "macOS 会在 Wisp 第一次需要时询问。如果错过了或点了“不允许”，在这里打开并为 Wisp 开启。"),
+                 bg=ui.CARD, fg=ui.DIM, font=self.f["small"], anchor="w", justify="left", wraplength=540).pack(
+            fill="x", pady=(2, 8))
+        row = tk.Frame(card, bg=ui.CARD)
+        row.pack(fill="x")
+        base = "x-apple.systempreferences:com.apple.preference.security?Privacy_"
+        for label, pane in ((L("Microphone", "麦克风"), "Microphone"), (L("Accessibility", "辅助功能"), "Accessibility"),
+                            (L("Input Monitoring", "输入监控"), "ListenEvent"), (L("Automation", "自动化"), "Automation")):
+            self.button(row, label + "  ↗", lambda p=pane: ui.open_file(base + p)).pack(side="left", padx=(0, 6))
 
     def pick_wake(self, code):
         self.choices["wake"] = code

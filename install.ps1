@@ -6,7 +6,7 @@
 # Or, from an unzipped download: double-click setup.bat (which runs this with -Local).
 # You're asked where to install it (suggested: %LOCALAPPDATA%\Wisp). Scripted installs can set $env:WISP_DIR.
 #
-# What it does: installs Python 3.13 (if needed), Wisp's Python packages, uv + Windows-MCP (app control),
+# What it does (no admin needed): a private Python 3.13 for Wisp (via uv), Wisp's packages, Windows-MCP (app control),
 # Claude Code (Wisp's brain), then adds Start Menu / desktop shortcuts and starts Wisp.
 
 param([switch]$Local)
@@ -129,7 +129,10 @@ if ($Local) {
     $source = Get-ChildItem $unpacked -Directory | Select-Object -First 1
     if (-not (Test-Path (Join-Path $source.FullName "core.py"))) { $source = Get-Item $unpacked }
     $InstallDir = Choose-InstallDir $InstallDir $null
-    if ((Test-Path (Join-Path $InstallDir "core.py")) -and (Get-Command py -ErrorAction SilentlyContinue)) {
+    $oldPy = Join-Path $InstallDir ".venv\Scripts\python.exe"
+    if ((Test-Path (Join-Path $InstallDir "core.py")) -and (Test-Path $oldPy)) {
+        Run-Tool "Updating Wisp" { & $oldPy (Join-Path $InstallDir "updater.py") $zip } | Out-Null
+    } elseif ((Test-Path (Join-Path $InstallDir "core.py")) -and (Get-Command py -ErrorAction SilentlyContinue)) {
         Run-Tool "Updating Wisp" { py -V:3.13 (Join-Path $InstallDir "updater.py") $zip } | Out-Null
     } else {
         Copy-Wisp $source.FullName $InstallDir
@@ -137,39 +140,69 @@ if ($Local) {
 }
 New-Item -Path $RegKey -Force | Out-Null
 Set-ItemProperty $RegKey -Name InstallDir -Value $InstallDir    # so updates go to the same place
+# list Wisp in Settings > Apps, so it can be uninstalled like any other program (per-user: no admin)
+$version = (Select-String -Path (Join-Path $InstallDir "app_info.py") -Pattern '^VERSION = "(.+)"' |
+            Select-Object -First 1).Matches.Groups[1].Value
+$apps = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Wisp"
+New-Item -Path $apps -Force | Out-Null
+Set-ItemProperty $apps -Name DisplayName -Value "Wisp"
+Set-ItemProperty $apps -Name DisplayVersion -Value $version
+Set-ItemProperty $apps -Name Publisher -Value "LucasTao638"
+Set-ItemProperty $apps -Name InstallLocation -Value $InstallDir
+Set-ItemProperty $apps -Name UninstallString -Value "cmd /c `"`"$(Join-Path $InstallDir 'uninstall.bat')`"`""
+Set-ItemProperty $apps -Name NoModify -Value 1 -Type DWord
+Set-ItemProperty $apps -Name NoRepair -Value 1 -Type DWord
 Say "Wisp's files are in $InstallDir" "Green"
 
-# ---------- 2. Python 3.13 ----------
-Say "[2/5] Checking Python 3.13..."
+# ---------- 2. Python 3.13 (private to Wisp) ----------
+# Wisp gets its own Python in its folder (.venv), downloaded by uv: no winget, no admin rights, and it
+# doesn't touch any other Python on this PC.
+Say "[2/5] Getting Python 3.13 for Wisp..."
 Refresh-Path
-$hasPy = (Get-Command py -ErrorAction SilentlyContinue) -and (Run-Tool "Python check" { py -V:3.13 --version } -Quiet -AllowFail)
-if (-not $hasPy) {
-    Say "Installing Python 3.13 (this can take a minute)..."
-    Run-Tool "Installing Python" { winget install -e --id Python.Python.3.13 --scope user --silent --accept-package-agreements --accept-source-agreements } -AllowFail | Out-Null
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    # in its own PowerShell, so an error inside the uv installer can't close this one
+    Run-Tool "Installing uv" { powershell -NoProfile -ExecutionPolicy Bypass -Command "`$env:UV_NO_MODIFY_PATH='1'; irm https://astral.sh/uv/install.ps1 | iex" } -AllowFail | Out-Null
     Refresh-Path
-    if (-not (Run-Tool "Python check" { py -V:3.13 --version } -Quiet -AllowFail)) {
-        throw "Python 3.13 didn't install. Install it from python.org, then run this again."
+}
+if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+    throw "Couldn't install uv (the tool that sets up Python). Check your internet connection and run this again."
+}
+$Venv = Join-Path $InstallDir ".venv"
+$VenvPy = Join-Path $Venv "Scripts\python.exe"
+$pyw = Join-Path $Venv "Scripts\pythonw.exe"
+if (-not (Test-Path $VenvPy)) {
+    Run-Tool "Setting up Python 3.13" { uv venv --python 3.13 $Venv } | Out-Null
+}
+if (-not (Run-Tool "Python check" { & $VenvPy -c "import tkinter" } -Quiet -AllowFail)) {
+    throw "Wisp's Python is missing its window toolkit (tkinter). Delete the .venv folder in $InstallDir and run this again."
+}
+Say "Python is ready." "Green"
+
+# ---------- 3. Python packages ----------
+Say "[3/5] Installing Wisp's packages (voice, hotkeys, tray) - a few minutes the first time..."
+Run-Tool "Installing Wisp's packages" { uv pip install --python $VenvPy -r (Join-Path $InstallDir "requirements.txt") } | Out-Null
+
+# Voice packages need Microsoft's Visual C++ runtime. Most PCs have it; a fresh one may not.
+if (-not (Test-Path "$env:WINDIR\System32\msvcp140.dll") -or -not (Test-Path "$env:WINDIR\System32\vcruntime140_1.dll")) {
+    Say "Installing Microsoft's Visual C++ runtime (Windows will ask for permission)..." "Yellow"
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+    $redist = Join-Path $env:TEMP "vc_redist.$arch.exe"
+    try {
+        Invoke-WebRequest "https://aka.ms/vs/17/release/vc_redist.$arch.exe" -OutFile $redist -UseBasicParsing
+        Start-Process $redist -ArgumentList "/install /quiet /norestart" -Verb RunAs -Wait
+    } catch {
+        Say "The Visual C++ runtime didn't install ($_). If Wisp's voice doesn't work, install it from https://aka.ms/vs/17/release/vc_redist.$arch.exe" "Yellow"
     }
 }
 
-# ---------- 3. Python packages ----------
-Say "[3/5] Installing Wisp's packages (voice, hotkeys, tray)..."
-Run-Tool "Updating pip" { py -V:3.13 -m pip install --upgrade --quiet --disable-pip-version-check pip } -AllowFail | Out-Null
-Run-Tool "Installing Wisp's packages" { py -V:3.13 -m pip install --quiet --disable-pip-version-check -r (Join-Path $InstallDir "requirements.txt") } | Out-Null
-
-# ---------- 4. uv + Windows-MCP (app control) ----------
+# ---------- 4. Windows-MCP (app control) ----------
 Say "[4/5] Installing app control (Windows-MCP)..."
-Refresh-Path
-if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
-    Refresh-Path
-}
 $mcpOk = Run-Tool "Installing Windows-MCP (app control)" { uv tool install windows-mcp --python 3.13 --force } -AllowFail
 if (-not $mcpOk) {
     # Most common cause: Wisp is still running, so Windows-MCP's files are in use and can't be replaced.
     Say "Windows-MCP didn't install (see the message above). Closing Wisp and trying once more..." "Yellow"
     Get-Process windows-mcp -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Get-CimInstance Win32_Process -Filter "Name = 'pythonw.exe'" -ErrorAction SilentlyContinue |
+    Get-CimInstance Win32_Process -Filter "Name like 'python%.exe'" -ErrorAction SilentlyContinue |
         Where-Object { $_.CommandLine -like "*app.py*" } |
         ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
     Start-Sleep -Seconds 2
@@ -187,12 +220,8 @@ Say "[5/5] Installing Claude Code (Wisp's brain)..."
 Refresh-Path
 $claudeExe = "$env:USERPROFILE\.local\bin\claude.exe"
 if (-not (Get-Command claude -ErrorAction SilentlyContinue) -and -not (Test-Path $claudeExe)) {
-    try {
-        $old = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-        Invoke-RestMethod https://claude.ai/install.ps1 | Invoke-Expression
-    } catch {
-        Write-Host "$_"
-    } finally { $ErrorActionPreference = $old }
+    # Anthropic's official installer, in its own PowerShell so an error in it can't close this one
+    Run-Tool "Installing Claude Code" { powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://claude.ai/install.ps1 | iex" } -AllowFail | Out-Null
     Refresh-Path
 }
 # make sure ~/.local/bin (Claude Code, uv) stays on PATH for next time
@@ -206,7 +235,6 @@ if ((Get-Command claude -ErrorAction SilentlyContinue) -or (Test-Path $claudeExe
 }
 
 # ---------- shortcuts ----------
-$pyw = (& py -V:3.13 -c "import sys, os; print(os.path.join(os.path.dirname(sys.executable), 'pythonw.exe'))").Trim()
 $shell = New-Object -ComObject WScript.Shell
 $places = @([Environment]::GetFolderPath("Programs"), [Environment]::GetFolderPath("Desktop"))
 foreach ($folder in $places) {
@@ -216,6 +244,26 @@ foreach ($folder in $places) {
     $lnk.WorkingDirectory = $InstallDir
     $lnk.Description = "Wisp - voice assistant"
     $lnk.Save()
+}
+# "Start when I log in" shortcut from an older install: point it at Wisp's own Python too
+$startup = Join-Path ([Environment]::GetFolderPath("Startup")) "Wisp.lnk"
+if (Test-Path $startup) {
+    $lnk = $shell.CreateShortcut($startup)
+    $lnk.TargetPath = $pyw
+    $lnk.Arguments = "`"$(Join-Path $InstallDir 'app.py')`" --startup"
+    $lnk.WorkingDirectory = $InstallDir
+    $lnk.Save()
+}
+
+# Windows can block desktop apps from using the microphone. Check, and open the right setting if so.
+$micKeys = @("HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone",
+             "HKCU:\Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone\NonPackaged",
+             "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone")
+$micBlocked = $micKeys | Where-Object { (Get-ItemProperty $_ -Name Value -ErrorAction SilentlyContinue).Value -eq "Deny" }
+if ($micBlocked) {
+    Say "Windows is blocking apps from using your microphone. Opening the setting:" "Yellow"
+    Say "  turn on 'Microphone access' and 'Let desktop apps access your microphone'." "Yellow"
+    Start-Process "ms-settings:privacy-microphone"
 }
 
 Say "`nDone! Starting Wisp - its setup screen connects Claude (no more typing commands).`n" "Green"

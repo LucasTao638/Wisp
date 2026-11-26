@@ -225,6 +225,11 @@ class SettingsWindow:
         self.switch(r, "share_usage_stats", True)
         ui.FlatButton(self.body, L("What's sent? (PRIVACY.md)", "会发送什么？（PRIVACY.md）"), lambda: ui.open_file(ui.ROOT / "PRIVACY.md"),
                       bg=ui.BG, font=self.f["small"]).pack(anchor="w", padx=20)
+        if sys.platform in ("win32", "darwin"):
+            r = self.row(L(f"Uninstall {APP_NAME}", f"卸载 {APP_NAME}"),
+                         L("Removes Wisp. You can choose to keep your settings and memory.",
+                           "移除 Wisp。可以选择保留你的设置和记忆。"))
+            ui.FlatButton(r, L("Uninstall…", "卸载……"), self.uninstall, font=self.f["small"]).pack()
 
         self.section(L("Feedback", "反馈"))
         r = self.row(L("Suggest an improvement or report a problem", "提出改进建议或报告问题"),
@@ -276,6 +281,28 @@ class SettingsWindow:
             c.create_oval(3, 3, 21, 21, fill=col, outline="#ffffff" if col == colour else col, width=2)
         if not initial:
             self._set("accent_colour", colour, restart=True)
+
+    def uninstall(self):
+        """Run the uninstaller in its own window (it asks before deleting anything), then quit Wisp."""
+        from tkinter import messagebox
+        if not messagebox.askyesno(L(f"Uninstall {APP_NAME}", f"卸载 {APP_NAME}"),
+                                   L(f"Close {APP_NAME} and open the uninstaller?\n\nIt asks whether to keep your "
+                                     "settings and memory before deleting anything.",
+                                     f"关闭 {APP_NAME} 并打开卸载程序？\n\n删除前会询问是否保留你的设置和记忆。"),
+                                   parent=self.win):
+            return
+        import subprocess
+        try:
+            if sys.platform == "win32":
+                subprocess.Popen(["cmd", "/c", "start", "Uninstall Wisp", str(ui.ROOT / "uninstall.bat")],
+                                 cwd=str(ui.ROOT.parent))
+            else:
+                subprocess.Popen(["open", "-a", "Terminal", str(ui.ROOT / "Uninstall Wisp.command")])
+        except Exception as e:
+            messagebox.showerror(APP_NAME, str(e), parent=self.win)
+            return
+        import os
+        os._exit(0)   # quit now so the uninstaller can remove Wisp's files
 
     def remove_key(self):
         """Forget the saved key, so Claude Code's own sign-in is used instead."""

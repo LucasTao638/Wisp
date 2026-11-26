@@ -105,9 +105,10 @@ if [ ! -x "$VENV/bin/python" ]; then
 fi
 # Wisp's package list. Uses requirements.txt when the download has it, otherwise this built-in copy.
 REQS="$INSTALL_DIR/requirements.txt"
-if [ ! -f "$REQS" ] && [ -f "$SOURCE/requirements.txt" ]; then
-  cp "$SOURCE/requirements.txt" "$REQS"
-fi
+for NAME in requirements.txt requirements-mac.txt; do   # older Mac downloads call it requirements-mac.txt
+  if [ ! -f "$REQS" ] && [ -f "$SOURCE/$NAME" ]; then cp "$SOURCE/$NAME" "$REQS"; fi
+  if [ ! -f "$REQS" ] && [ -f "$INSTALL_DIR/$NAME" ]; then cp "$INSTALL_DIR/$NAME" "$REQS"; fi
+done
 if [ ! -f "$REQS" ]; then
   warn "(requirements.txt wasn't in the download - using the built-in package list)"
   REQS="$(mktemp)"
@@ -157,17 +158,19 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>com.wisp.assistant</string>
   <key>CFBundleExecutable</key><string>Wisp</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>${WISP_VERSION:-0.1.2}</string>
+  <key>CFBundleShortVersionString</key><string>${WISP_VERSION:-0.1.3}</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSMicrophoneUsageDescription</key><string>Wisp listens when you hold the talk key or say the wake phrase.</string>
   <key>NSAppleEventsUsageDescription</key><string>Wisp controls apps when you ask it to.</string>
 </dict></plist>
 PLIST
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
+chmod +x "$INSTALL_DIR/uninstall.sh" "$INSTALL_DIR/Uninstall Wisp.command" 2>/dev/null || true
 good "Wisp is in your Applications folder (in your home folder)."
 
 say ""
 good "Done! Opening Wisp - its setup screen connects Claude. No more typing commands."
-say "macOS will ask to allow the Microphone, Accessibility and Automation for Wisp: allow them, then reopen Wisp."
+say "macOS will ask to allow the Microphone, Accessibility and Automation for Wisp: allow them."
+say "(The setup screen has buttons for these settings if you miss a prompt.)"
 pkill -f "$INSTALL_DIR/app.py" 2>/dev/null || true   # close a copy that's already running
 open "$APP" --args --setup

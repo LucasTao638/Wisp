@@ -18,23 +18,34 @@ Talk to it (or type), and Wisp searches the web properly, opens and controls app
 
 ## Install
 
-**You need:** an **Anthropic API key** ([get one here](https://console.anthropic.com/settings/keys)) and, optionally, a microphone.
+**You need:** Windows 10/11 or macOS 12+, an internet connection, and an Anthropic account to pay for Claude ([get an API key](https://console.anthropic.com/settings/keys)). A microphone is optional. **You don't need to install Python, Git or anything else first**: the installer gets everything, and it doesn't need admin rights.
 
 ### Windows 10 / 11
-Open **PowerShell** and paste:
-```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex"
-```
-**Or** download `wisp-v…-windows.zip` from [Releases](../../releases), unzip it, and double-click **`setup.bat`**.
+1. Download **`wisp-v…-windows.zip`** from [Releases](../../releases) and unzip it (right-click > **Extract All**).
+2. Double-click **`setup.bat`**. If Windows says *"Windows protected your PC"*, click **More info > Run anyway** (Wisp is free and isn't code-signed).
+3. Press **Enter** to install to the suggested folder (or type **C** to choose your own).
+
+Or, in **PowerShell**: `powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex"`
 
 ### macOS 12 or newer (beta)
-Open **Terminal** and paste:
-```bash
-curl -fsSL https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.sh | bash
-```
-Wisp appears in your **Applications** folder (in your home folder). The first time, macOS asks to allow the **Microphone**, **Accessibility / Input Monitoring** (for the talk key and shortcuts) and **Automation** (when Wisp controls an app). Allow them, then reopen Wisp.
+1. Download **`wisp-v…-mac.zip`** from [Releases](../../releases) and double-click it to unzip.
+2. Double-click **`Install Wisp.command`**. If macOS blocks it, right-click it > **Open** > **Open**.
+3. Press **Enter** to install to the suggested folder (or type **C** to choose your own).
 
-The installers set up Python 3.13, Wisp's packages and Claude Code (plus Windows-MCP for app control on Windows), then open a short setup screen.
+Or, in **Terminal**: `curl -fsSL https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.sh | bash`
+
+Wisp appears in your **Applications** folder (the one in your home folder). macOS asks to allow the **Microphone**, **Accessibility / Input Monitoring** (for the talk key) and **Automation** (when Wisp controls an app): allow them. Missed one? The setup screen has buttons that open each setting.
+
+### What the installer does for you
+- Downloads a private copy of **Python 3.13** just for Wisp (it won't touch any other Python on your computer)
+- Installs Wisp's packages, **Claude Code** (Wisp's brain) and, on Windows, **Windows-MCP** (app control) and Microsoft's Visual C++ runtime if it's missing
+- Adds Wisp to the Start Menu / Applications, checks the microphone isn't blocked, and opens a short setup screen
+- Remembers where you installed it, so running it again updates Wisp in place (your settings and memory are kept)
+
+**Connecting Claude takes no typing:** the setup screen's **Connect Claude** page gives you two options with step-by-step instructions: paste an API key, or sign in through Claude Code's own window. It checks Claude Code is installed (if not: **Install it for me**) and tests the connection for you. You can change this later in **Settings > Claude**.
+
+### Uninstalling
+**Settings > System > Uninstall Wisp**. On Windows you can also use **Settings > Apps**. It asks whether to keep your settings and memory.
 
 ### What does it cost?
 Wisp is free. Claude is pay-as-you-go through your own Anthropic API key: you pay Anthropic only for what you use. Quick requests usually cost around a cent or less; big research or coding tasks cost more. **Set a monthly spending limit** in the [Anthropic Console](https://console.anthropic.com/settings/limits) so there are no surprises. Choosing the Haiku model in Settings makes it cheaper still. Timers, routines, shortcuts and the phone controls don't use Claude at all.

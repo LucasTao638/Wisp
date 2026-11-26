@@ -190,11 +190,12 @@ def _install_requirements():
     """Install any new packages the update needs."""
     import shutil
     import subprocess
-    mac = sys.platform == "darwin"
-    reqs = ROOT / ("requirements-mac.txt" if mac else "requirements.txt")
+    reqs = ROOT / "requirements.txt"
+    if not reqs.exists():
+        reqs = ROOT / "requirements-mac.txt"   # older Mac downloads
     python = sys.executable.replace("pythonw.exe", "python.exe")
-    uv = shutil.which("uv") or str(Path.home() / ".local" / "bin" / "uv")
-    if mac and Path(uv).exists():  # the Mac install uses uv (its Python has no pip)
+    uv = shutil.which("uv") or str(Path.home() / ".local" / "bin" / ("uv.exe" if sys.platform == "win32" else "uv"))
+    if Path(uv).exists():  # Wisp's own Python (.venv, made by uv) has no pip: use uv
         cmd = [uv, "pip", "install", "--python", python, "-q", "-r", str(reqs)]
     else:
         cmd = [python, "-m", "pip", "install", "-q", "-r", str(reqs)]

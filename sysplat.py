@@ -3,6 +3,7 @@
 The rest of Wisp calls these functions and doesn't need to care which system it's on.
 """
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -51,7 +52,8 @@ def open_target(target):
     if IS_WIN:
         os.startfile(target)
     elif IS_MAC:
-        is_path_or_link = "://" in target or target.endswith(":") or os.path.exists(target) or "/" in target
+        is_path_or_link = ("://" in target or target.endswith(":") or os.path.exists(target) or "/" in target
+                           or bool(re.match(r"^[a-zA-Z][\w.+-]+:\S", target)))  # e.g. x-apple.systempreferences:...
         if is_path_or_link:
             subprocess.run(["open", target if not target.endswith(":") else target + "//"], check=True,
                            capture_output=True)

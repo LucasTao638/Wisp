@@ -5,6 +5,10 @@
 - Talks like a person: Wisp's replies are now casual and natural, react to what you said, remember the conversation ("what about tomorrow?") and sometimes ask something back - no more "Certainly!" or "anything else?"
 - Headphones option: wearing headphones? Just start talking while Wisp is speaking and it stops to listen
 - Settings for all of these under Settings > Listening
+- Easier install: nothing to install first. Windows now gets its own private Python 3.13 too (no winget, no admin, doesn't touch other Pythons), installs Microsoft's Visual C++ runtime if it's missing, and warns if Windows is blocking the microphone
+- Uninstall from Settings > System (and on Windows from Settings > Apps), keeping your settings and memory if you like. New Mac uninstaller
+- Mac: buttons in the setup screen to open the Microphone, Accessibility, Input Monitoring and Automation settings
+- Mac installer and updates accept older downloads that call the package list requirements-mac.txt
 
 ## 0.1.2
 - New side widget: when you talk, a small panel appears beside the orb instead of the full-screen HUD (no dimming, nothing in the middle of the screen). It shows what Wisp heard, what it's doing and its reply, with a Stop button. Choose widget / full-screen HUD / just the orb in Settings
