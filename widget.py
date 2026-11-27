@@ -1,27 +1,34 @@
-"""The side widget: a small panel that appears beside the orb while you talk to Wisp.
+"""The side widget: a small holographic panel that appears beside the orb while you talk to Wisp.
 
 Unlike the full-screen HUD it doesn't dim the screen or take over the middle of it. It shows:
-  - what Wisp is doing (listening / thinking / speaking), with a live mic meter while listening
-  - what it heard you say, the step it's on, and its reply
+  - what Wisp is doing: listening (live waveform), thinking (scanning bar + the current step), speaking
+  - what it heard you say, and its reply
   - a Stop button that interrupts everything (same as F10, Esc, or saying "stop")
 It tucks itself away a few seconds after Wisp has finished (not while your mouse is over it).
+Everything is drawn on one canvas, so it can have cut corners, glowing edges and scan lines.
 """
+import math
 import re
-import sys
 import time
 import tkinter as tk
 
-import ui_kit as ui
+import holo
 from context import hide_from_screenshots
+from hud_draw import KEY, make_see_through
 from i18n import L
 
-PANEL = "#0d1319"
-LINE = "#1f2a35"
-SOFT = "#cfe2ee"
+SOFT = "#bfe6f7"
 
 
 class TalkWidget:
-    WIDTH = 340
+    WIDTH = 360
+
+    STATES = {
+        "listening": (("Listening", "正在听"), "#38d6ff"),
+        "thinking": (("Thinking", "正在思考"), holo.AMBER),
+        "speaking": (("Speaking", "正在说话"), holo.GREEN),
+        "ready": (("Standing by", "待命"), holo.DIM),
+    }
 
     def __init__(self, app):
         self.app = app
@@ -34,6 +41,10 @@ class TalkWidget:
         self.hovered = False
         self._hide_job = None
         self._fade = 0.0
+        self.you_text = self.step_text = self.reply_text = self.hint_text = ""
+        self.reply_colour = holo.TEXT
+        self._level = 0.0
+        self.H = 120
 
     @property
     def is_open(self):
@@ -41,67 +52,32 @@ class TalkWidget:
 
     # ---------- building ----------
     def _build(self):
-        s, a = self.s, self.app
+        a = self.app
         self.win = win = tk.Toplevel(a.root)
         win.overrideredirect(True)
         win.attributes("-topmost", True)
-        win.configure(bg=LINE)
+        win.configure(bg=KEY)
         try:
             win.attributes("-alpha", 0.0)
         except tk.TclError:
             pass
-        card = tk.Frame(win, bg=PANEL, padx=int(16 * s), pady=int(12 * s))
-        card.pack(fill="both", expand=True, padx=1, pady=1)   # the 1px gap shows LINE as a thin border
-        self.card = card
-
-        head = tk.Frame(card, bg=PANEL)
-        head.pack(fill="x")
-        self.dot = tk.Canvas(head, width=int(10 * s), height=int(10 * s), bg=PANEL, highlightthickness=0)
-        self.dot.pack(side="left", padx=(0, int(8 * s)))
-        self.state_label = tk.Label(head, bg=PANEL, fg=self.accent, font=a.f_status, anchor="w")
-        self.state_label.pack(side="left")
-        close = tk.Label(head, text="✕", bg=PANEL, fg=ui.DIM, font=a.f_small, cursor="hand2")
-        close.pack(side="right")
-        close.bind("<ButtonRelease-1>", lambda e: self.hide())
-
-        self.meter = tk.Canvas(card, height=int(22 * s), bg=PANEL, highlightthickness=0)
-        self.hint_label = tk.Label(card, bg=PANEL, fg=ui.DIM, font=a.f_small, anchor="w")
-        wrap = int((self.WIDTH - 34) * s)
-        self.you = tk.Label(card, bg=PANEL, fg=SOFT, font=a.f_caption, anchor="w", justify="left", wraplength=wrap)
-        self.step = tk.Label(card, bg=PANEL, fg=ui.DIM, font=a.f_small, anchor="w", justify="left", wraplength=wrap)
-        self.reply = tk.Label(card, bg=PANEL, fg=ui.TEXT, font=a.f_body, anchor="w", justify="left", wraplength=wrap)
-
-        self.bottom = tk.Frame(card, bg=PANEL)
-        self.stop_btn = ui.FlatButton(self.bottom, L("■  Stop", "■  停止"), self.stop, bg="#3a1d22",
-                                      fg="#ffb4b4", hover="#552830", font=a.f_small)
-        import hotkeys
-        stop_key = hotkeys.label(self.cfg.get("stop_key", "f10"))
-        self.hint = tk.Label(self.bottom, text=L(f"or press {stop_key}, or say “stop”", f"或按 {stop_key}，或说“停”"),
-                             bg=PANEL, fg=ui.DIM, font=a.f_small)
-
-        for w in (win, card):
-            w.bind("<Enter>", lambda e: self._hover(True))
-            w.bind("<Leave>", lambda e: self._hover(False))
+        self.f = holo.fonts(a.root)
+        self.c = c = tk.Canvas(win, width=int(self.WIDTH * self.s), height=self.H, bg=KEY, highlightthickness=0)
+        c.pack(fill="both", expand=True)
+        make_see_through(win, c)
+        c.tag_bind("close", "<ButtonRelease-1>", lambda e: self.hide())
+        c.tag_bind("stop", "<ButtonRelease-1>", lambda e: self.stop())
+        c.tag_bind("stop", "<Enter>", lambda e: self._stop_hover(True))
+        c.tag_bind("stop", "<Leave>", lambda e: self._stop_hover(False))
+        c.bind("<Enter>", lambda e: self._hover(True))
+        c.bind("<Leave>", lambda e: self._hover(False))
         try:
             hide_from_screenshots(win)  # Claude's screenshots should show your screen, not Wisp
         except Exception:
             pass
-        if sys.platform == "win32":
-            self._round_corners()
-        self.you_text = self.step_text = self.reply_text = self.hint_text = ""
-        self.reply_colour = ui.TEXT
+        self._stop_hot = False
         self._render()
         self._tick()
-
-    def _round_corners(self):
-        try:  # Windows 11: rounded corners on a borderless window
-            import ctypes
-            from overlay import _hwnd
-            self.win.update_idletasks()
-            value = ctypes.c_int(2)  # DWMWCP_ROUND
-            ctypes.windll.dwmapi.DwmSetWindowAttribute(_hwnd(self.win), 33, ctypes.byref(value), 4)
-        except Exception:
-            pass
 
     # ---------- showing / hiding ----------
     def show(self):
@@ -109,7 +85,7 @@ class TalkWidget:
         if self.win is None:
             self._build()
         self._place()
-        self._fade_to(0.97)
+        self._fade_to(0.96)
 
     def hide(self):
         self._cancel_hide()
@@ -169,14 +145,16 @@ class TalkWidget:
         elif self.state == "ready":
             self._schedule_hide()
 
+    def _stop_hover(self, on):
+        self._stop_hot = on
+        self._render()
+
     def _place(self):
         """Bottom-right, just to the left of the orb (or in the corner if the orb is hidden)."""
         if self.win is None:
             return
         a, s = self.app, self.s
-        self.win.update_idletasks()
-        w = int(self.WIDTH * s)
-        h = self.win.winfo_reqheight()
+        w, h = int(self.WIDTH * s), self.H
         _, _, right, bottom = a._work_area()
         if not a.hidden and a.corner_visible:
             x = a.root.winfo_x() + int(a.W / 2 - 70 * s) - w   # beside the orb itself, not its whole window
@@ -186,78 +164,158 @@ class TalkWidget:
         y = bottom - h - int(16 * s)
         self.win.geometry(f"{w}x{h}+{x}+{y}")
 
-    # ---------- what's shown ----------
-    STATES = {
-        "listening": (("Listening…", "正在听……"), "#38d6ff"),
-        "thinking": (("Thinking…", "正在思考……"), "#f2c94c"),
-        "speaking": (("Speaking", "正在说话"), "#7ee787"),
-        "ready": (("Done", "完成"), "#6b7785"),
-    }
-
+    # ---------- drawing ----------
     def _render(self):
+        """Lay everything out top to bottom, then draw the panel to fit behind it."""
         if self.win is None:
             return
+        c, s, f = self.c, self.s, self.f
+        c.delete("all")
+        W = int(self.WIDTH * s)
+        pad = 18 * s
+        inner = W - 2 * pad
         (en, zh), colour = self.STATES.get(self.state, self.STATES["ready"])
         if self.compact and self.state == "thinking":
-            en, zh = "Working in your apps…", "正在操作你的应用……"
-        self.state_label.config(text=L(en, zh).upper(), fg=colour)
-        self._dot_colour = colour
+            en, zh = "Working in your apps", "正在操作你的应用"
+        self._colour = colour
 
-        for w in (self.meter, self.hint_label, self.you, self.step, self.reply, self.bottom):
-            w.pack_forget()
-        pad = (int(8 * self.s), 0)
-        if self.state == "listening":
-            self.meter.pack(fill="x", pady=pad)
-            if self.hint_text:
-                self.hint_label.config(text=self.hint_text)
-                self.hint_label.pack(fill="x", pady=(int(4 * self.s), 0))
+        y = 16 * s
+        # header: ◆ STATUS ............ WISP  ✕
+        self._dot_xy = (pad + 5 * s, y + 8 * s)
+        c.create_text(pad + 18 * s, y + 8 * s, text=holo.spaced(L(en, zh)), anchor="w", font=f["label"],
+                      fill=colour, tags="text")
+        c.create_text(W - pad - 22 * s, y + 8 * s, text="WISP", anchor="e", font=f["label"], fill=holo.MUTED,
+                      tags="text")
+        c.create_text(W - pad, y + 8 * s, text="✕", anchor="e", font=f["small"], fill=holo.DIM,
+                      tags=("text", "close"))
+        y += 24 * s
+        self._rule_y = y
+        y += 10 * s
+
+        if self.state in ("listening", "thinking", "speaking"):
+            self._meter_box = (pad, y, W - pad, y + 30 * s)   # waveform / scanning bar, drawn every frame
+            y += 38 * s
+        else:
+            self._meter_box = None
+
+        def block(text, font, fill, gap=8):
+            nonlocal y
+            if not text:
+                return
+            item = c.create_text(pad, y, text=text, anchor="nw", font=font, fill=fill, width=inner, tags="text")
+            box = c.bbox(item)
+            y = (box[3] if box else y) + gap * s
+
         if self.you_text and not self.compact:
-            self.you.config(text=f"“{self.you_text}”")
-            self.you.pack(fill="x", pady=pad)
+            c.create_text(pad - 2 * s, y, text="▸", anchor="nw", font=f["small"], fill=holo.mix(holo.BG, colour, 0.7),
+                          tags="text")
+            y0 = y
+            item = c.create_text(pad + 12 * s, y, text=f"“{self.you_text}”", anchor="nw", font=f["body"],
+                                 fill=SOFT, width=inner - 12 * s, tags="text")
+            box = c.bbox(item)
+            y = (box[3] if box else y0) + 8 * s
         if self.step_text and self.state == "thinking":
-            self.step.config(text="› " + self.step_text)
-            self.step.pack(fill="x", pady=pad)
+            block("› " + self.step_text, f["mono"], holo.mix(holo.DIM, holo.AMBER, 0.35))
         if self.reply_text and not self.compact:
             text = self.reply_text if len(self.reply_text) < 420 else self.reply_text[:417] + "…"
-            self.reply.config(text=text, fg=self.reply_colour)
-            self.reply.pack(fill="x", pady=pad)
+            block(text, f["body"], self.reply_colour, gap=10)
+        if self.state == "listening" and self.hint_text:
+            block("◇  " + self.hint_text, f["small"], holo.mix(holo.DIM, self._colour, 0.3))
+
         if self.state in ("listening", "thinking", "speaking"):
-            self.stop_btn.config(text=L("■  Cancel", "■  取消") if self.state == "listening"
-                                 else L("■  Stop", "■  停止"))
-            self.stop_btn.pack(side="left")
+            y += 4 * s
+            label = L("CANCEL", "取消") if self.state == "listening" else L("STOP", "停止")
+            bw, bh = f["label"].measure("■  " + label) + 28 * s, 26 * s
+            red = holo.RED
+            fill = holo.mix(holo.PANEL, red, 0.35 if self._stop_hot else 0.14)
+            c.create_polygon(holo.chamfer(pad, y, pad + bw, y + bh, 6 * s), fill=fill,
+                             outline=red if self._stop_hot else holo.mix(holo.PANEL, red, 0.6), tags="stop")
+            c.create_text(pad + bw / 2, y + bh / 2, text="■  " + label, font=f["label"],
+                          fill=holo.mix(red, "#ffffff", 0.5), tags="stop")
+            import hotkeys
+            key = hotkeys.label(self.cfg.get("stop_key", "f10"))
             if not self.compact:
-                self.hint.pack(side="left", padx=(int(10 * self.s), 0))
-            self.bottom.pack(fill="x", pady=(int(12 * self.s), 0))
+                c.create_text(pad + bw + 12 * s, y + bh / 2, text=L(f"{key}  ·  or say “stop”", f"{key}  ·  或说“停”"),
+                              anchor="w", font=f["small"], fill=holo.MUTED, tags="text")
+            y += bh
+        y += 16 * s
+        H = int(y)
+        self.H = H
+
+        # the panel behind it all
+        cut = 14 * s
+        pts = holo.chamfer(1, 1, W - 2, H - 2, cut)
+        c.create_polygon(pts, fill=holo.PANEL, outline=holo.LINE, tags="panel")
+        line = holo.mix(holo.PANEL, colour, 0.035)
+        for sy in range(4, H - 3, 4):   # scan lines, kept inside the cut corners
+            left = 2 + max(0, cut - sy)
+            right = W - 3 - max(0, cut - (H - 2 - sy))
+            c.create_line(left, sy, right, sy, fill=line, tags="panel")
+        # glowing top edge (beside the cut) and left edge
+        holo.glow_line(c, (1 + cut, 1, W * 0.55, 1), colour, holo.PANEL, tag="panel")
+        holo.glow_line(c, (1, 1 + cut, 1, H * 0.5), colour, holo.PANEL, tag="panel")
+        holo.brackets(c, 5, 5, W - 6, H - 6, holo.mix(holo.PANEL, colour, 0.7), size=9 * s, width=2,
+                      tag="panel", corners="tr bl")
+        c.create_line(pad, self._rule_y, W - pad, self._rule_y, fill=holo.LINE, tags="panel")
+        c.create_line(pad, self._rule_y, pad + 36 * s, self._rule_y, fill=colour, width=2, tags="panel")
+        c.tag_lower("panel")
+        c.configure(height=H)
         self._place()
+        self._draw_dynamic()
+
+    def _draw_dynamic(self):
+        """The parts that move: the status diamond and the waveform / scanning bar."""
+        c, s, now = self.c, self.s, time.time()
+        c.delete("dyn")
+        colour = self._colour
+        x, y = self._dot_xy
+        pulse = 0.6 + 0.4 * abs(((now * 1.4) % 2) - 1) if self.state != "ready" else 1.0
+        r = 5 * s
+        c.create_polygon(x, y - r - 2 * s * pulse, x + r + 2 * s * pulse, y, x, y + r + 2 * s * pulse,
+                         x - r - 2 * s * pulse, y, fill=holo.mix(holo.PANEL, colour, 0.25), outline="", tags="dyn")
+        c.create_polygon(x, y - r, x + r, y, x, y + r, x - r, y, fill=colour, outline="", tags="dyn")
+        if not self._meter_box:
+            return
+        x1, y1, x2, y2 = self._meter_box
+        mid = (y1 + y2) / 2
+        if self.state == "listening":
+            self._level += (self.app.assistant.mic_level - self._level) * 0.35
+            amp = (3 + min(1.0, self._level * 1.8) * 12) * s
+            for k, (alpha, phase, scale) in enumerate(((0.25, 1.7, 0.6), (0.5, 0.9, 0.85), (1.0, 0.0, 1.0))):
+                pts = []
+                n = 48
+                for i in range(n + 1):
+                    px = x1 + (x2 - x1) * i / n
+                    env = math.sin(math.pi * i / n)   # fade out at both ends
+                    py = mid + math.sin(i * 0.55 + now * 7 + phase) * amp * scale * env \
+                        * (0.6 + 0.4 * math.sin(i * 0.17 + now * 3))
+                    pts += [px, py]
+                c.create_line(*pts, fill=holo.mix(holo.PANEL, colour, alpha), width=2 if k == 2 else 1,
+                              smooth=True, tags="dyn")
+        elif self.state == "thinking":
+            segs, gap = 24, 3 * s
+            sw = (x2 - x1 - gap * (segs - 1)) / segs
+            head = (now * 14) % (segs + 8) - 4
+            for i in range(segs):
+                sx = x1 + i * (sw + gap)
+                d = abs(i - head)
+                strength = max(0.12, 1 - d / 5)
+                c.create_polygon(holo.chamfer(sx, mid - 4 * s, sx + sw, mid + 4 * s, 2 * s, "tr bl"),
+                                 fill=holo.mix(holo.PANEL, colour, strength), outline="", tags="dyn")
+        else:  # speaking: equaliser bars
+            bars = 32
+            bw = (x2 - x1) / bars
+            for i in range(bars):
+                h = (2 + abs(math.sin(i * 0.9 + now * 9) * math.sin(i * 0.3 + now * 2.3)) * 12) * s
+                bx = x1 + i * bw + bw / 2
+                c.create_line(bx, mid - h, bx, mid + h, fill=holo.mix(holo.PANEL, colour, 0.85),
+                              width=max(2, int(bw * 0.45)), tags="dyn")
 
     def _tick(self):
-        """Animates the status dot and the mic meter."""
         if self.win is None:
             return
-        s, now = self.s, time.time()
-        d = self.dot
-        d.delete("all")
-        size = int(10 * s)
-        pulse = 0.65 + 0.35 * abs(((now * 1.6) % 2) - 1) if self.state != "ready" else 1.0
-        r = size / 2 * pulse
-        d.create_oval(size / 2 - r, size / 2 - r, size / 2 + r, size / 2 + r, fill=self._dot_colour, outline="")
-        if self.state == "listening":
-            m = self.meter
-            m.delete("all")
-            width = max(m.winfo_width(), int((self.WIDTH - 34) * s))
-            height = int(22 * s)
-            self._level = getattr(self, "_level", 0.0)
-            self._level += (self.app.assistant.mic_level - self._level) * 0.35   # smoothed
-            level = self._level
-            bars = 28
-            gap = width / bars
-            for i in range(bars):
-                wave = 0.35 + 0.65 * abs(((now * 3 + i * 0.37) % 2) - 1)
-                h = max(2 * s, height * min(1.0, level * 1.6) * wave)
-                x = i * gap + gap / 2
-                m.create_line(x, height / 2 - h / 2, x, height / 2 + h / 2, fill=self.accent,
-                              width=max(2, int(gap * 0.45)), capstyle="round")
-        self.win.after(50, self._tick)
+        self._draw_dynamic()
+        self.win.after(40, self._tick)
 
     # ---------- events from Wisp ----------
     def on_event(self, kind, text):
@@ -276,24 +334,24 @@ class TalkWidget:
                 self.you_text = self.reply_text = self.step_text = self.hint_text = ""
         elif kind == "hint":
             self.hint_text = text
-            self.you_text, self.reply_text, self.reply_colour = getattr(self, "_last", ("", "", ui.TEXT))
+            self.you_text, self.reply_text, self.reply_colour = getattr(self, "_last", ("", "", holo.TEXT))
         elif kind == "hearing":
             self.you_text = text + " …"
         elif kind == "user":
             self.you_text, self.reply_text, self.step_text, self.hint_text = text, "", "", ""
-            self.reply_colour = ui.TEXT
+            self.reply_colour = holo.TEXT
         elif kind == "tool":
             if not text.startswith("took "):
                 self.step_text = self.app._friendly_step(text)
                 self.compact = "windows-mcp" in text or "computer" in text.lower()
         elif kind == "say":
-            self.reply_text, self.reply_colour, self.compact = text, ui.TEXT, False
+            self.reply_text, self.reply_colour, self.compact = text, holo.TEXT, False
         elif kind == "error":
-            self.reply_text, self.reply_colour = text, ui.RED
+            self.reply_text, self.reply_colour = text, holo.RED
         elif kind == "alert":
-            self.reply_text, self.reply_colour = text, ui.TEXT
+            self.reply_text, self.reply_colour = text, holo.TEXT
         elif kind == "info" and re.match(r"^(Stopped|已停止)", text or ""):
-            self.reply_text, self.reply_colour, self.step_text = text, ui.DIM, ""
+            self.reply_text, self.reply_colour, self.step_text = text, holo.DIM, ""
         else:
             return
         self._render()

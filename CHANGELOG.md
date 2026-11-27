@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.5
+- A whole new look: a holographic design across every window - near-black glass, thin glowing lines, cut corners and corner brackets
+  - The orb is now a precise holographic lens instead of a glowing blob: live audio bars while you talk, a radar sweep while it thinks, pulse rings while it speaks. Its faint parts stay visible on any wallpaper
+  - The side widget shows a live waveform while listening, a scanning bar while thinking and an equaliser while speaking, with a Stop button
+  - Settings has a sidebar with one section at a time instead of one long list
+  - New setup screens with a segmented progress bar, and a restyled full-screen HUD and right-click menu
+- New "Composed AI" voice style: a little deeper and slower, with a subtle synthetic edge and a sense of space (Settings > Voice > Voice style; "Natural" turns it off)
+- Choose Wisp's personality: "Composed butler" (calm, polite, dry wit) or "Friendly" (casual) - in setup and Settings > You
+- Dark title bars on Windows; fixed the Save button in Settings so "Restart now" works
+
 ## 0.1.4
 - Anonymous usage stats and feedback are now switched on for real, so problems and ideas people send actually reach the developer (still optional: turn it off any time in Settings, see PRIVACY.md)
 - Uninstaller, Mac permission buttons and installer fixes from 0.1.3 are included

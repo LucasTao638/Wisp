@@ -31,9 +31,9 @@ Easiest: **GitHub Desktop** (<https://desktop.github.com>)
 
 ### 5. Publish the first release
 1. On GitHub: your repo → **Releases** → **Draft a new release**.
-2. **Choose a tag** → type `v0.1.3` → *Create new tag on publish*.
-3. Title: `Wisp 0.1.3`. Description: paste the 0.1.3 section from `CHANGELOG.md`.
-4. **Publish release**. Within a minute or two, the **Actions** tab builds **`wisp-v0.1.3-windows.zip`** and **`wisp-v0.1.3-mac.zip`** and attaches both to the release automatically. (To build them on your own PC instead: `py build_release.py v0.1.3` → they appear in `build/`.)
+2. **Choose a tag** → type `v0.1.4` → *Create new tag on publish*.
+3. Title: `Wisp 0.1.4`. Description: paste the 0.1.4 section from `CHANGELOG.md`.
+4. **Publish release**. Within a minute or two, the **Actions** tab builds **`wisp-v0.1.4-windows.zip`** and **`wisp-v0.1.4-mac.zip`** and attaches both to the release automatically. (To build them on your own PC instead: `py build_release.py v0.1.4` → they appear in `build/`.)
 5. Test the one-line install on your own PC (or a friend's).
 
 ---

@@ -1,4 +1,4 @@
-"""A dark, rounded right-click menu that matches the HUD (Windows' own menus can't be styled properly).
+"""A dark, holographic right-click menu (cut corners, glowing edge) that matches the HUD (Windows' own menus can't be styled properly).
 
 items: a list of dicts
   {"label": "New chat", "command": fn}                      a normal item
@@ -23,9 +23,10 @@ def _mix(a, b, t):
 
 
 def rounded_rect(canvas, x1, y1, x2, y2, r, **kw):
-    pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
-           x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
-    return canvas.create_polygon(pts, smooth=True, **kw)
+    """(Kept its old name.) A box with two cut corners, top-left and bottom-right."""
+    c = min(r * 0.7, (y2 - y1) / 2)
+    pts = [x1, y1 + c, x1 + c, y1, x2, y1, x2, y2 - c, x2 - c, y2, x1, y2]
+    return canvas.create_polygon(pts, **kw)
 
 
 class HudMenu:
@@ -61,8 +62,11 @@ class HudMenu:
         from hud_draw import make_see_through
         make_see_through(win, c)
         c.pack()
-        rounded_rect(c, 1, 1, self.w - 2, self.h - 2, 14 * s, fill=panel,
-                     outline=_mix(panel, accent, 0.45), width=1)
+        rounded_rect(c, 1, 1, self.w - 2, self.h - 2, 18 * s, fill=panel,
+                     outline=_mix(panel, accent, 0.35), width=1)
+        c.create_line(1 + 13 * s, 1, self.w * 0.55, 1, fill=accent, width=2)   # glowing top edge
+        for (x, y, dx, dy) in ((self.w - 6 * s, 6 * s, -1, 1), (6 * s, self.h - 6 * s, 1, -1)):
+            c.create_line(x, y + 9 * s * dy, x, y, x + 9 * s * dx, y, fill=_mix(panel, accent, 0.7), width=2)
         self.hover_id = rounded_rect(c, 0, 0, 0, 0, 8 * s, fill=_mix(panel, accent, 0.16), outline="", state="hidden")
         self.rows = []  # (top, bottom, item)
         self._draw_rows()
@@ -123,9 +127,8 @@ class HudMenu:
         top, bottom, _ = row
         s = self.s
         x1, y1, x2, y2 = 6 * s, top + 2 * s, self.w - 6 * s, bottom - 2 * s
-        r = 8 * s
-        self.c.coords(self.hover_id, x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2,
-                      x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1)
+        r = 6 * s
+        self.c.coords(self.hover_id, x1, y1 + r, x1 + r, y1, x2, y1, x2, y2 - r, x2 - r, y2, x1, y2)
         self.c.itemconfig(self.hover_id, state="normal")
         self.c.tag_lower(self.hover_id, "row")
 

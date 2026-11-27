@@ -6,17 +6,18 @@ import webbrowser
 from pathlib import Path
 from tkinter import font as tkfont
 
-from classic_ui import FlatButton  # noqa: F401  (re-exported)
+import holo
 
 ROOT = Path(__file__).resolve().parent
 CONFIG = ROOT / "config.json"
 
-BG = "#0a0e13"
-CARD = "#121820"
-TEXT = "#dfe7ef"
-DIM = "#6b7785"
-RED = "#ff6b6b"
-GREEN = "#3fb950"
+# colours come from the holographic design system (holo.py)
+BG = holo.BG
+CARD = holo.PANEL
+TEXT = holo.TEXT
+DIM = holo.DIM
+RED = holo.RED
+GREEN = holo.GREEN
 
 VOICES = [
     ("en-GB-RyanNeural", "Ryan - British male"),
@@ -57,51 +58,27 @@ def save_config(changes):
 
 
 def fonts(root, scale=1.0):
-    fam = set(tkfont.families(root))
-    hud = "Bahnschrift" if "Bahnschrift" in fam else ("Segoe UI" if "Segoe UI" in fam else "Helvetica")
-    body = "Segoe UI" if "Segoe UI" in fam else "Helvetica"
-    return {
-        "title": tkfont.Font(root, family=hud, size=18, weight="bold"),
-        "head": tkfont.Font(root, family=hud, size=11, weight="bold"),
-        "body": tkfont.Font(root, family=body, size=11),
-        "small": tkfont.Font(root, family=body, size=9),
-        "big": tkfont.Font(root, family=hud, size=26, weight="bold"),
-    }
+    return holo.fonts(root, scale)
 
 
-class Switch(tk.Canvas):
-    """An on/off switch that lights up in the accent colour."""
+def FlatButton(parent, text, command=None, bg=None, fg=None, hover=None, font=None, **kw):
+    """A button in the holographic style. Accent-coloured buttons (dark text) become 'primary'."""
+    kind = "primary" if fg in ("#031018", "#021016", holo.ON_ACCENT) else ("danger" if fg == "#ffb4b4" else "ghost")
+    accent = bg if kind == "primary" and bg else holo.ACCENT
+    try:
+        parent_bg = parent.cget("bg")
+    except Exception:
+        parent_bg = BG
+    return holo.Button(parent, text, command, kind=kind, font=font, accent=accent,
+                       bg=parent_bg if kind != "primary" or not bg else parent_bg)
 
-    def __init__(self, parent, value=False, command=None, accent="#38d6ff", bg=CARD):
-        super().__init__(parent, width=46, height=26, bg=bg, highlightthickness=0, cursor="hand2")
-        self.value, self.command, self.accent = bool(value), command, accent
-        self.bind("<ButtonRelease-1>", lambda e: self.set(not self.value, notify=True))
-        self._draw()
 
-    def _draw(self):
-        self.delete("all")
-        track = self.accent if self.value else "#2a3340"
-        self.create_oval(1, 1, 25, 25, fill=track, outline="")
-        self.create_oval(21, 1, 45, 25, fill=track, outline="")
-        self.create_rectangle(13, 1, 33, 25, fill=track, outline="")
-        x = 23 if self.value else 3
-        self.create_oval(x, 3, x + 20, 23, fill="#0a0e13" if self.value else "#c9d1da", outline="")
-
-    def set(self, value, notify=False):
-        self.value = bool(value)
-        self._draw()
-        if notify and self.command:
-            self.command(self.value)
-
-    def get(self):
-        return self.value
+def Switch(parent, value=False, command=None, accent="#38d6ff", bg=None):
+    return holo.Switch(parent, value, command, accent, bg)
 
 
 def entry(parent, value="", show=None, width=30, f=None):
-    e = tk.Entry(parent, bg="#1a222c", fg=TEXT, insertbackground=TEXT, bd=0, highlightthickness=1,
-                 highlightbackground="#26303c", highlightcolor="#38d6ff", width=width, show=show, font=f)
-    e.insert(0, value)
-    return e
+    return holo.entry(parent, value, show=show, width=width, font=f)
 
 
 def open_url(url):

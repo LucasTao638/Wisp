@@ -38,13 +38,16 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-PANEL = "#0a0e13"
-TEXT = "#dfe7ef"
-DIM = "#6b7785"
-RED = "#ff6b6b"
+import holo
+import ui_kit
 
-AMBER_TEXT = "#ffb547"
-FIELD_BG = "#121820"
+PANEL = holo.BG
+TEXT = holo.TEXT
+DIM = holo.DIM
+RED = holo.RED
+
+AMBER_TEXT = holo.AMBER
+FIELD_BG = holo.PANEL
 STATUS_WORDS = {s: f"status_{s}" for s in ("starting", "ready", "listening", "thinking", "speaking")}
 
 
@@ -166,9 +169,12 @@ class OrbApp:
         s, c, W = self.s, self.canvas, self.W
         top, bottom, r = 345 * s, 530 * s, 22 * s
         x1, x2 = 14 * s, W - 14 * s
-        pts = [x1 + r, top, x2 - r, top, x2, top, x2, top + r, x2, bottom - r, x2, bottom,
-               x2 - r, bottom, x1 + r, bottom, x1, bottom, x1, bottom - r, x1, top + r, x1, top]
-        c.create_polygon(pts, smooth=True, fill=PANEL, outline=mix(PANEL, self.accent, 0.35), width=1)
+        import holo
+        cut = 16 * s
+        c.create_polygon(holo.chamfer(x1, top, x2, bottom, cut), fill=PANEL, outline=holo.LINE, width=1)
+        holo.glow_line(c, (x1 + cut, top, x1 + (x2 - x1) * 0.6, top), self.accent, PANEL)
+        holo.brackets(c, x1 + 5 * s, top + 5 * s, x2 - 5 * s, bottom - 5 * s, mix(PANEL, self.accent, 0.7),
+                      size=9 * s, width=2, corners="tr bl")
 
         self.status_id = c.create_text(W / 2, top + 24 * s, text="", font=self.f_status, fill=self.accent)
         self.step_id = c.create_text(W / 2, top + 46 * s, text="", font=self.f_small, fill=DIM, width=W - 70 * s)
@@ -377,7 +383,8 @@ class OrbApp:
         c.delete("orb")
         if self.corner_visible:
             status, colour, pulse, spin = orb_state(self, t)
-            draw_orb(c, self.cx, self.cy, s, colour, pulse, spin, t, self.ripples, tag="orb")
+            draw_orb(c, self.cx, self.cy, s, colour, pulse, spin, t, self.ripples, tag="orb", status=status,
+                     level=self.level)
         else:
             status, colour = self.status, self.accent
 
@@ -741,9 +748,9 @@ class OrbApp:
             self.remote.stop()
             win.destroy()
             self.caption = L("Phone remote is off.", "手机遥控已关闭。")
-        classic_ui.FlatButton(row, L("Forget all phones", "忘记所有手机"), forget, font=self.f_small).pack(side="left", padx=4)
-        classic_ui.FlatButton(row, L("Turn off phone remote", "关闭手机遥控"), turn_off, font=self.f_small).pack(side="left", padx=4)
-        classic_ui.FlatButton(row, L("Done", "完成"), win.destroy, bg=accent, fg="#031018", hover=accent,
+        ui_kit.FlatButton(row, L("Forget all phones", "忘记所有手机"), forget, font=self.f_small).pack(side="left", padx=4)
+        ui_kit.FlatButton(row, L("Turn off phone remote", "关闭手机遥控"), turn_off, font=self.f_small).pack(side="left", padx=4)
+        ui_kit.FlatButton(row, L("Done", "完成"), win.destroy, bg=accent, fg="#031018", hover=accent,
                               font=self.f_small).pack(side="left", padx=4)
 
         def update():
@@ -782,9 +789,9 @@ class OrbApp:
         body.pack(fill="both", expand=True, padx=int(16 * s))
         bottom = tk.Frame(win, bg=PANEL)
         bottom.pack(fill="x", padx=int(16 * s), pady=int(12 * s))
-        classic_ui.FlatButton(bottom, L("Edit the file (advanced)", "编辑文件（高级）"), lambda: self._open_file(routines.FILE),
+        ui_kit.FlatButton(bottom, L("Edit the file (advanced)", "编辑文件（高级）"), lambda: self._open_file(routines.FILE),
                               font=self.f_small).pack(side="left")
-        classic_ui.FlatButton(bottom, L("Close", "关闭"), win.destroy, bg=self.accent, fg="#031018", hover=self.accent,
+        ui_kit.FlatButton(bottom, L("Close", "关闭"), win.destroy, bg=self.accent, fg="#031018", hover=self.accent,
                               font=self.f_small).pack(side="right")
         state = {"mtime": None}
 
@@ -809,8 +816,8 @@ class OrbApp:
                 top = tk.Frame(card, bg=FIELD_BG)
                 top.pack(fill="x")
                 tk.Label(top, text=name.title(), bg=FIELD_BG, fg=self.accent, font=self.f_title).pack(side="left")
-                classic_ui.FlatButton(top, L("Delete", "删除"), lambda n=name: delete(n), bg=FIELD_BG, font=self.f_small).pack(side="right")
-                classic_ui.FlatButton(top, L("Run", "运行"), lambda n=name: run(n), bg=FIELD_BG, font=self.f_small).pack(side="right", padx=4)
+                ui_kit.FlatButton(top, L("Delete", "删除"), lambda n=name: delete(n), bg=FIELD_BG, font=self.f_small).pack(side="right")
+                ui_kit.FlatButton(top, L("Run", "运行"), lambda n=name: run(n), bg=FIELD_BG, font=self.f_small).pack(side="right", padx=4)
                 phrases = r.get("triggers") or [name]
                 if i18n.is_zh():  # show the Chinese phrases first
                     phrases = sorted(phrases, key=lambda p: not any("\u4e00" <= ch <= "\u9fff" for ch in p))

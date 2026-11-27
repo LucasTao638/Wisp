@@ -256,14 +256,19 @@ class FullHud:
         self.status_id = c.create_text(W / 2, cy_text, text="", font=self.f_status, fill=A, tags="static")
         self.step_id = c.create_text(W / 2, cy_text + 34 * u, text="", font=self.f_body, fill=DIM, tags="static")
         bw = 900 * u
-        self.caption_bg = c.create_rectangle(W / 2 - bw / 2, cy_text + 58 * u, W / 2 + bw / 2,
-                                             cy_text + 190 * u, fill=PANEL, outline="", tags="static")
+        import holo
+        cx1, cy1, cx2, cy2 = W / 2 - bw / 2, cy_text + 58 * u, W / 2 + bw / 2, cy_text + 190 * u
+        self.caption_bg = c.create_polygon(holo.chamfer(cx1, cy1, cx2, cy2, 18 * u), fill=PANEL,
+                                           outline=mix(PANEL, A, 0.22), tags="static")
+        holo.brackets(c, cx1 + 6 * u, cy1 + 6 * u, cx2 - 6 * u, cy2 - 6 * u, mix(PANEL, A, 0.7), size=12 * u,
+                      width=max(2, int(2 * u)), tag="static", corners="tr bl")
         self.caption_id = c.create_text(W / 2, cy_text + 66 * u, text="", font=self.f_caption, fill=TEXT,
                                         width=bw - 40 * u, justify="center", anchor="n", tags="static")
         ew = 620 * u
         ey = cy_text + 222 * u
-        c.create_rectangle(W / 2 - ew / 2 - 14 * u, ey - 22 * u, W / 2 + ew / 2 + 14 * u, ey + 22 * u,
-                           fill=PANEL, outline=mix(PANEL, A, 0.45), tags="static")
+        c.create_polygon(holo.chamfer(W / 2 - ew / 2 - 14 * u, ey - 22 * u, W / 2 + ew / 2 + 14 * u, ey + 22 * u,
+                                      10 * u), fill=PANEL, outline=mix(PANEL, A, 0.55), tags="static")
+        c.create_text(W / 2 - ew / 2 - 4 * u, ey, text="›", font=self.f_status, fill=A, tags="static")
         self.entry = tk.Entry(self.hud, bg=PANEL, fg=TEXT, bd=0, highlightthickness=0, insertbackground=A,
                               font=self.f_body, justify="center")
         c.create_window(W / 2, ey, window=self.entry, width=ew, height=32 * u)
@@ -313,11 +318,9 @@ class FullHud:
         c, u, A, app = self.c, self.u, self.accent, self.app
         c.delete("orb")
         status, colour, pulse, spin = orb_state(app, t)
-        draw_orb(c, self.cx, self.cy, self.orb_s, colour, pulse, spin, t, app.ripples, tag="orb", detail=2)
+        draw_orb(c, self.cx, self.cy, self.orb_s, colour, pulse, spin, t, app.ripples, tag="orb", detail=2,
+                 status=status, level=app.level)
 
-        # scanning line sweeping down the screen
-        sy = (t * 140 * u) % self.H
-        c.create_line(0, sy, self.W, sy, fill=mix(KEY, A, 0.12), tags="orb")
 
         word = tr(f"status_{status}") if status in ("starting", "ready", "listening", "thinking", "speaking") else tr("status_ready")
         if status in ("thinking", "starting"):
@@ -372,7 +375,8 @@ class FullHud:
         battery_label = tr("hud_battery") + (tr("hud_charging") if self.stats.charging and self.stats.battery is not None else "")
         for i, (label, val) in enumerate(((tr("hud_cpu"), self.stats.cpu), (tr("hud_memory"), self.stats.mem),
                                           (battery_label, self.stats.battery))):
-            gauge(c, gx, y1 + (62 + i * 50) * u, gw, u, label, val, A, PANEL, self.f_value, self.f_small)
+            gauge(c, gx, y1 + (62 + i * 50) * u, gw, u, label, val, A, PANEL, self.f_value, self.f_small,
+                  high_is_good=i == 2)
 
         # activity
         x1, y1, x2, y2 = self.panels["activity"]

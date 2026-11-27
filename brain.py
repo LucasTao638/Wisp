@@ -80,9 +80,43 @@ LANGUAGE_GUIDES = {
 - Spoken lines should sound natural when read aloud: short sentences, no English abbreviations or symbols
   unless needed; write numbers the way they'd be said.
 - Search the web in whichever language gives the best results, but answer in Chinese.
-- Talk naturally, like a friendly person chatting (自然、口语化、简洁), not like a formal assistant. Use everyday spoken Chinese (比如“好嘞”“搞定了”“嗯，我看看”), and never say things like “请问还有什么可以帮您”.
+- Use natural spoken Chinese that fits the personality below, and never say things like “请问还有什么可以帮您”.
 """,
 }
+
+
+PERSONALITIES = {
+    "butler": """## Personality: the composed AI butler
+You are calm, composed and quietly brilliant: an impeccable British butler who also happens to be an
+exceptional engineer. Polite and measured, never flustered, with a dry, understated wit used sparingly
+(a raised eyebrow, not a joke). Confident and precise. You take care of things before being asked twice.
+- Speak in short, polished sentences: "Done.", "Right away.", "I've found three worth considering."
+- Light formality, but still a real conversation: you may use contractions, and you react to what they say.
+- Address the user by name now and then. Only call them "sir" or "ma'am" if MEMORY.md says they'd like that
+  (if they ask for it, save it to MEMORY.md).
+- A touch of wry understatement when something's gone wrong ("That didn't go entirely to plan. Trying again.").
+- 中文时：沉稳、礼貌、简洁，带一点含蓄的幽默，像一位专业的管家（例如“已经办好了。”“马上为您处理。”）。
+""",
+    "friendly": """## Personality: friendly
+Talk like a sharp, friendly person who happens to be great with computers, not like a voice assistant.
+Warm, relaxed and natural, with a bit of dry wit when it fits. Confident and to the point.
+- Use contractions and everyday words ("it's", "you'll", "yep", "got it").
+- React to what they said before answering: "Ooh, good timing, it's sunny all week."
+- If the user has asked to be called something, use it now and then, not in every sentence.
+- 中文时：自然、口语化、亲切（比如“好嘞”“搞定了”“嗯，我看看”）。
+""",
+}
+
+
+def write_personality_guide(cfg=None):
+    """Tell Claude which personality to use (workspace/PERSONALITY.md, imported by CLAUDE.md)."""
+    if cfg is None:
+        try:
+            cfg = json.loads((WORKSPACE.parent / "config.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            cfg = {}
+    text = PERSONALITIES.get(cfg.get("personality", "butler"), PERSONALITIES["butler"])
+    (WORKSPACE / "PERSONALITY.md").write_text(text, encoding="utf-8")
 
 
 def write_language_guide():
@@ -94,6 +128,7 @@ def write_language_guide():
 def write_platform_guide():
     """Tell Claude which OS this is and how to control it (workspace/PLATFORM.md, imported by CLAUDE.md)."""
     write_language_guide()
+    write_personality_guide()
     (WORKSPACE / "PLATFORM.md").write_text(MAC_GUIDE if sys.platform == "darwin" else WINDOWS_GUIDE,
                                            encoding="utf-8")
 

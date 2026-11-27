@@ -6,6 +6,7 @@ import tkinter as tk
 import autostart
 import claude_setup
 import credentials
+import holo
 import i18n
 import telemetry
 import ui_kit as ui
@@ -19,7 +20,19 @@ def models():
             ("opus", L("Opus - smartest, slowest, most expensive", "Opus - 最聪明、最慢、最贵"))]
 
 
+SECTION_ICONS = {"Language": "文", "Claude": "◈", "You": "◉", "Voice": "◖", "Listening": "◍", "Look": "◐",
+                 "System": "▣", "Feedback": "✎", "Updates": "⟳"}
+
+
+def personalities():
+    return [("butler", L("Composed butler - calm, polite, dry wit", "沉稳管家 - 冷静、礼貌、含蓄幽默")),
+            ("friendly", L("Friendly - casual and relaxed", "亲切 - 随和、轻松"))]
+
+
 class SettingsWindow:
+    """Two columns: a list of sections on the left, the chosen section's settings on the right."""
+    WIDTH, HEIGHT, SIDEBAR = 860, 660, 210
+
     def __init__(self, app):
         self.app = app
         self.cfg = ui.load_config()
@@ -28,47 +41,116 @@ class SettingsWindow:
         self.needs_restart = False
         win = self.win = tk.Toplevel(app.root, bg=ui.BG)
         win.title(L(f"{APP_NAME} settings", f"{APP_NAME} 设置"))
-        win.geometry("600x720")
+        win.geometry(f"{self.WIDTH}x{self.HEIGHT}")
+        win.minsize(760, 520)
+        holo.dark_titlebar(win)
         self.f = ui.fonts(win)
 
-        tk.Label(win, text=L("S E T T I N G S", "设  置"), bg=ui.BG, fg=self.accent, font=self.f["title"]).pack(pady=(18, 6))
-        outer = tk.Frame(win, bg=ui.BG)
-        outer.pack(fill="both", expand=True)
-        canvas = tk.Canvas(outer, bg=ui.BG, highlightthickness=0)
-        bar = tk.Scrollbar(outer, command=canvas.yview, bg=ui.BG, troughcolor=ui.BG, bd=0, width=10)
-        bar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
-        canvas.configure(yscrollcommand=bar.set)
-        self.body = tk.Frame(canvas, bg=ui.BG)
-        canvas.create_window((0, 0), window=self.body, anchor="nw", width=570)
-        self.body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        win.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-e.delta / 120), "units"))
+        holo.Header(win, L("Settings", "设置"), L("WISP // CONFIGURATION", "WISP // 设置"), self.accent, self.f,
+                    width=self.WIDTH, height=74, right_text=f"v{VERSION}").pack(fill="x")
 
-        self.build()
-
+        # bottom bar: status message, Cancel, Save
         bottom = tk.Frame(win, bg=ui.BG)
-        bottom.pack(fill="x", padx=20, pady=14)
+        bottom.pack(fill="x", side="bottom", padx=24, pady=(10, 14))
+        line = tk.Canvas(win, height=2, bg=ui.BG, highlightthickness=0)
+        line.pack(fill="x", side="bottom")
+        line.create_line(0, 1, 4000, 1, fill=holo.LINE)
         self.status = tk.Label(bottom, text="", bg=ui.BG, fg=ui.DIM, font=self.f["small"])
         self.status.pack(side="left")
-        self.save_btn = ui.FlatButton(bottom, L("Save", "保存"), self.save, bg=self.accent, fg="#031018", hover=self.accent).pack(side="right")
-        ui.FlatButton(bottom, L("Cancel", "取消"), win.destroy).pack(side="right", padx=8)
+        self.save_btn = holo.Button(bottom, L("Save", "保存"), self.save, kind="primary", font=self.f["head"],
+                                    accent=self.accent, padx=22, pady=8)
+        self.save_btn.pack(side="right")
+        holo.Button(bottom, L("Cancel", "取消"), win.destroy, font=self.f["body"], accent=self.accent,
+                    padx=16, pady=7).pack(side="right", padx=10)
+
+        # middle: sidebar | content
+        middle = tk.Frame(win, bg=ui.BG)
+        middle.pack(fill="both", expand=True)
+        self.sidebar = tk.Frame(middle, bg=holo.PANEL, width=self.SIDEBAR)
+        self.sidebar.pack(side="left", fill="y")
+        self.sidebar.pack_propagate(False)
+        edge = tk.Canvas(middle, width=2, bg=ui.BG, highlightthickness=0)
+        edge.pack(side="left", fill="y")
+        edge.create_line(1, 0, 1, 4000, fill=holo.LINE)
+        self.scroll = holo.ScrollArea(middle, self.WIDTH - self.SIDEBAR - 24, accent=self.accent)
+        win.bind("<MouseWheel>", lambda e: self.scroll.scroll(int(-e.delta / 120)))
+
+        self.pages = []      # (title, frame)
+        self.page_root = self.scroll.body
+        self.body = self.page_root
+        self.build()
+        self.nav_items = []
+        tk.Label(self.sidebar, text=L("SECTIONS", "分类"), bg=holo.PANEL, fg=holo.MUTED, font=self.f["label"],
+                 anchor="w").pack(fill="x", padx=18, pady=(16, 8))
+        for i, (title, _frame) in enumerate(self.pages):
+            self._nav_item(i, title)
+        self.show_page(0)
+
+    # ---------- sidebar ----------
+    def _nav_item(self, i, title):
+        c = tk.Canvas(self.sidebar, height=36, bg=holo.PANEL, highlightthickness=0, cursor="hand2",
+                      width=self.SIDEBAR)
+        c.pack(fill="x")
+        c.bind("<ButtonRelease-1>", lambda e: self.show_page(i))
+        c.bind("<Enter>", lambda e: self._draw_nav(i, hover=True))
+        c.bind("<Leave>", lambda e: self._draw_nav(i))
+        self.nav_items.append((c, title))
+
+    def _draw_nav(self, i, hover=False):
+        c, title = self.nav_items[i]
+        c.delete("all")
+        on = i == self.current
+        a = self.accent
+        if on:
+            c.create_polygon(holo.chamfer(10, 3, self.SIDEBAR - 12, 33, 6, "tr bl"),
+                             fill=holo.mix(holo.PANEL, a, 0.14), outline=holo.mix(holo.PANEL, a, 0.5))
+            c.create_line(10, 8, 10, 28, fill=a, width=3)
+        elif hover:
+            c.create_polygon(holo.chamfer(10, 3, self.SIDEBAR - 12, 33, 6, "tr bl"),
+                             fill=holo.PANEL_HI, outline="")
+        c.create_text(26, 18, text=f"{i + 1:02d}", anchor="w", font=self.f["label"],
+                      fill=a if on else holo.MUTED)
+        c.create_text(54, 18, text=title, anchor="w", font=self.f["head"] if on else self.f["body"],
+                      fill=ui.TEXT if on or hover else ui.DIM)
+
+    def show_page(self, i):
+        self.current = i
+        for k, (_title, frame) in enumerate(self.pages):
+            if k == i:
+                frame.pack(fill="x")
+            else:
+                frame.pack_forget()
+        for k in range(len(self.nav_items)):
+            self._draw_nav(k)
+        try:
+            self.scroll.canvas.yview_moveto(0)
+        except Exception:
+            pass
 
     # ---------- layout helpers ----------
     def section(self, title):
-        tk.Label(self.body, text=title if i18n.is_zh() else " ".join(title.upper()), bg=ui.BG, fg=self.accent, font=self.f["head"],
-                 anchor="w").pack(fill="x", padx=20, pady=(18, 6))
+        """Start a new page. Everything added until the next section() goes on it."""
+        frame = tk.Frame(self.page_root, bg=ui.BG)
+        self.pages.append((title, frame))
+        self.body = frame
+        n = len(self.pages)
+        head = tk.Frame(frame, bg=ui.BG)
+        head.pack(fill="x", padx=24, pady=(22, 10))
+        tk.Label(head, text=f"{n:02d} // " + holo.spaced(title), bg=ui.BG, fg=holo.mix(ui.BG, self.accent, 0.85),
+                 font=self.f["label"], anchor="w").pack(fill="x")
+        tk.Label(head, text=title, bg=ui.BG, fg=ui.TEXT, font=self.f["title"], anchor="w").pack(fill="x", pady=(2, 0))
 
     def row(self, label, hint=None):
-        card = tk.Frame(self.body, bg=ui.CARD, padx=14, pady=10)
-        card.pack(fill="x", padx=20, pady=3)
+        card = holo.Card(self.body, accent=self.accent, padx=16, pady=11)
+        card.pack(fill="x", padx=24, pady=4)
         left = tk.Frame(card, bg=ui.CARD)
         left.pack(side="left", fill="x", expand=True)
         tk.Label(left, text=label, bg=ui.CARD, fg=ui.TEXT, font=self.f["body"], anchor="w").pack(fill="x")
         if hint:
             tk.Label(left, text=hint, bg=ui.CARD, fg=ui.DIM, font=self.f["small"], anchor="w", justify="left",
-                     wraplength=330).pack(fill="x")
+                     wraplength=300).pack(fill="x", pady=(2, 0))
         right = tk.Frame(card, bg=ui.CARD)
-        right.pack(side="right")
+        right.pack(side="right", padx=(12, 0))
         return right
 
     def switch(self, parent, key, default, restart=False, on_change=None):
@@ -78,23 +160,19 @@ class SettingsWindow:
                 self.needs_restart = True
             if on_change:
                 on_change(v)
-        s = ui.Switch(parent, self.cfg.get(key, default), changed, self.accent)
+        s = holo.Switch(parent, self.cfg.get(key, default), changed, self.accent)
         s.pack()
         return s
 
     def dropdown(self, parent, key, options, default, restart=False):
-        labels = {code: label for code, label in options}
-        var = tk.StringVar(value=labels.get(self.cfg.get(key, default), options[0][1]))
-        menu = tk.OptionMenu(parent, var, *[label for _, label in options],
-                             command=lambda label: self._set(key, next(c for c, l in options if l == label), restart))
-        menu.config(bg="#1a222c", fg=ui.TEXT, activebackground=self.accent, activeforeground="#031018",
-                    highlightthickness=0, bd=0, font=self.f["small"], width=30)
-        menu["menu"].config(bg="#1a222c", fg=ui.TEXT, activebackground=self.accent, activeforeground="#031018")
-        menu.pack()
-        return var
+        dd = holo.Dropdown(parent, options, self.cfg.get(key, default),
+                           command=lambda code: self._set(key, code, restart), font=self.f["small"],
+                           accent=self.accent, width=210)
+        dd.pack()
+        return dd
 
     def text(self, parent, key, default="", width=22, restart=False):
-        e = ui.entry(parent, self.cfg.get(key, default), width=width, f=self.f["body"])
+        e = holo.entry(parent, self.cfg.get(key, default), width=width, font=self.f["body"], accent=self.accent)
         e.pack(ipady=4)
         e.bind("<KeyRelease>", lambda ev: self._set(key, e.get().strip(), restart))
         return e
@@ -103,11 +181,9 @@ class SettingsWindow:
         value = self.cfg.get(key, default)
         if fmt == "percent":  # "+8%" <-> 8
             value = int(str(value).replace("%", "") or 0)
-        s = tk.Scale(parent, from_=lo, to=hi, resolution=res, orient="horizontal", length=170, bg=ui.CARD,
-                     fg=ui.TEXT, troughcolor="#26303c", highlightthickness=0, bd=0, activebackground=self.accent,
-                     font=self.f["small"],
-                     command=lambda v: self._set(key, (f"{int(float(v)):+d}%" if fmt == "percent" else float(v)), restart))
-        s.set(value)
+        s = holo.Slider(parent, value, lo, hi, res, accent=self.accent, font=self.f["mono"], fmt=fmt,
+                        command=lambda v: self._set(key, (f"{int(float(v)):+d}%" if fmt == "percent" else float(v)),
+                                                    restart))
         s.pack()
 
     def _set(self, key, value, restart=False):
@@ -129,26 +205,33 @@ class SettingsWindow:
                        f"当前：{credentials.masked()}。加密保存在本机。"))
         btns = tk.Frame(r, bg=ui.CARD)
         btns.pack()
-        ui.FlatButton(btns, L("Change", "更改"), self.change_key, font=self.f["small"]).pack(side="left")
+        self.button(btns, L("Change", "更改"), self.change_key).pack(side="left")
         if credentials.has_api_key():
-            ui.FlatButton(btns, L("Remove", "删除"), self.remove_key, font=self.f["small"]).pack(side="left", padx=(6, 0))
+            self.button(btns, L("Remove", "删除"), self.remove_key, danger=True).pack(side="left", padx=(6, 0))
         self.key_area = tk.Frame(self.body, bg=ui.BG)
-        self.key_area.pack(fill="x", padx=20)
+        self.key_area.pack(fill="x", padx=24)
         claude_setup.status_card(self.body, self.f, self.accent, credentials.load_api_key).pack(
-            fill="x", padx=20, pady=(6, 4))
+            fill="x", padx=24, pady=4)
         r = self.row(L("Model", "模型"), L("Which Claude model answers you.", "由哪个 Claude 模型回答你。"))
         self.dropdown(r, "model", models(), "sonnet", restart=True)
 
         self.section(L("You", "你"))
         r = self.row(L("Your name", "你的名字"), L("Used in greetings and the HUD.", "用于问候和全屏界面。"))
         self.text(r, "user_name")
+        r = self.row(L("Personality", "性格"), L("How Wisp talks to you.", "Wisp 和你说话的方式。"))
+        self.dropdown(r, "personality", personalities(), "butler", restart=True)
 
         self.section(L("Voice", "声音"))
         r = self.row(L("Voice", "声音"))
         voices = ui.VOICES_ZH + ui.VOICES if i18n.is_zh() else ui.VOICES + ui.VOICES_ZH
         self.voice_var = self.dropdown(r, "edge_voice", voices, voices[0][0], restart=True)
+        r = self.row(L("Voice style", "声音风格"),
+                     L("Composed AI: a little deeper and slower, with a subtle synthetic edge.",
+                       "沉稳 AI：稍低沉、稍慢，带一点合成质感。"))
+        self.dropdown(r, "voice_style", [("ai", L("Composed AI", "沉稳 AI")), ("natural", L("Natural", "自然"))],
+                      "ai", restart=True)
         r = self.row(L("Hear it", "试听"), L("Plays a sample with the voice and speed above.", "用上面的声音和语速播放一段示例。"))
-        ui.FlatButton(r, L("▶ Preview", "▶ 试听"), self.preview, font=self.f["small"]).pack()
+        self.button(r, L("▶  Preview", "▶  试听"), self.preview).pack()
         r = self.row(L("Speaking speed", "语速"))
         self.slider(r, "edge_rate", "+8%", -30, 40, 2, restart=True, fmt="percent")
         r = self.row(L("Speak replies out loud", "朗读回复"), L("Off = replies are shown but not spoken.", "关闭后只显示回复，不朗读。"))
@@ -198,7 +281,7 @@ class SettingsWindow:
         swatches.pack()
         self.swatch_widgets = []
         for colour in ui.ACCENTS:
-            c = tk.Canvas(swatches, width=24, height=24, bg=ui.CARD, highlightthickness=0, cursor="hand2")
+            c = tk.Canvas(swatches, width=27, height=27, bg=ui.CARD, highlightthickness=0, cursor="hand2")
             c.pack(side="left", padx=2)
             c.bind("<ButtonRelease-1>", lambda e, col=colour: self.pick_colour(col))
             self.swatch_widgets.append((c, colour))
@@ -218,53 +301,51 @@ class SettingsWindow:
         self.section(L("System", "系统"))
         if sys.platform in ("win32", "darwin"):
             r = self.row(L(f"Start {APP_NAME} when I log in", f"登录时自动启动 {APP_NAME}"), L("Starts hidden.", "启动后隐藏。"))
-            ui.Switch(r, autostart.is_enabled(), lambda v: autostart.set_enabled(v), self.accent).pack()
+            holo.Switch(r, autostart.is_enabled(), lambda v: autostart.set_enabled(v), self.accent).pack()
         r = self.row(L("Share anonymous usage stats", "分享匿名使用统计"),
                      L("Helps the developer improve Wisp. Never includes what you say, files or your location.",
                        "帮助开发者改进 Wisp。绝不包含你说的话、文件或你的位置。"))
         self.switch(r, "share_usage_stats", True)
-        ui.FlatButton(self.body, L("What's sent? (PRIVACY.md)", "会发送什么？（PRIVACY.md）"), lambda: ui.open_file(ui.ROOT / "PRIVACY.md"),
-                      bg=ui.BG, font=self.f["small"]).pack(anchor="w", padx=20)
+        self.button(self.body, L("What's sent? (PRIVACY.md)  ↗", "会发送什么？（PRIVACY.md）  ↗"),
+                    lambda: ui.open_file(ui.ROOT / "PRIVACY.md")).pack(anchor="w", padx=24, pady=(6, 0))
         if sys.platform in ("win32", "darwin"):
             r = self.row(L(f"Uninstall {APP_NAME}", f"卸载 {APP_NAME}"),
                          L("Removes Wisp. You can choose to keep your settings and memory.",
                            "移除 Wisp。可以选择保留你的设置和记忆。"))
-            ui.FlatButton(r, L("Uninstall…", "卸载……"), self.uninstall, font=self.f["small"]).pack()
+            self.button(r, L("Uninstall…", "卸载……"), self.uninstall, danger=True).pack()
 
         self.section(L("Feedback", "反馈"))
         r = self.row(L("Suggest an improvement or report a problem", "提出改进建议或报告问题"),
                      L("Goes straight to the developer. You can also just say “I have a suggestion: …”.",
                        "直接发送给开发者。也可以直接说“我有个建议：……”。"))
-        ui.FlatButton(r, L("Send feedback", "发送反馈"), self.open_feedback, font=self.f["small"]).pack()
+        self.button(r, L("Send feedback", "发送反馈"), self.open_feedback).pack()
 
         self.section(L("Updates", "更新"))
         r = self.row(f"{APP_NAME} {VERSION}", L("Checks for new versions automatically twice a day.", "每天自动检查两次新版本。"))
-        ui.FlatButton(r, L("Check now", "立即检查"), self.check_updates, font=self.f["small"]).pack()
+        self.button(r, L("Check now", "立即检查"), self.check_updates).pack()
         self.update_label = tk.Label(self.body, text="", bg=ui.BG, fg=ui.DIM, font=self.f["small"], anchor="w",
                                      wraplength=540, justify="left")
-        self.update_label.pack(fill="x", padx=20)
+        self.update_label.pack(fill="x", padx=24)
         tk.Frame(self.body, bg=ui.BG, height=20).pack()
 
     def language_dropdown(self, parent):
         options = list(i18n.LANGUAGES.items())
-        var = tk.StringVar(value=i18n.LANGUAGES.get(self.cfg.get("language", "en"), options[0][1]))
 
-        def picked(label):
-            code = next(c for c, lab in options if lab == label)
+        def picked(code):
             if code == self.cfg.get("language", "en") and "language" not in self.changes:
                 return
             self.changes.update(i18n.LANGUAGE_DEFAULTS[code])
             self.changes["language"] = code
             self.needs_restart = True
-            voice_label = dict(ui.VOICES + ui.VOICES_ZH).get(self.changes["edge_voice"])
-            if voice_label and hasattr(self, "voice_var"):
-                self.voice_var.set(voice_label)
+            if hasattr(self, "voice_var"):
+                self.voice_var.pick(self.changes["edge_voice"], notify=False)
             self.status.config(text=L("Restart to switch language.", "重启后切换语言。"), fg=self.accent)
-        menu = tk.OptionMenu(parent, var, *[lab for _, lab in options], command=picked)
-        menu.config(bg="#1a222c", fg=ui.TEXT, activebackground=self.accent, activeforeground="#031018",
-                    highlightthickness=0, bd=0, font=self.f["small"], width=30)
-        menu["menu"].config(bg="#1a222c", fg=ui.TEXT, activebackground=self.accent, activeforeground="#031018")
-        menu.pack()
+        holo.Dropdown(parent, options, self.cfg.get("language", "en"), command=picked, font=self.f["small"],
+                      accent=self.accent, width=210).pack()
+
+    def button(self, parent, text, command, danger=False):
+        return holo.Button(parent, text, command, kind="danger" if danger else "ghost", font=self.f["small"],
+                           accent=self.accent)
 
     def open_feedback(self):
         show = getattr(self.app, "show_feedback", None)
@@ -278,7 +359,10 @@ class SettingsWindow:
     def pick_colour(self, colour, initial=False):
         for c, col in self.swatch_widgets:
             c.delete("all")
-            c.create_oval(3, 3, 21, 21, fill=col, outline="#ffffff" if col == colour else col, width=2)
+            chosen = col == colour
+            c.create_polygon(holo.chamfer(4, 4, 22, 22, 4), fill=col, outline="")
+            if chosen:
+                holo.brackets(c, 1, 1, 25, 25, "#ffffff", size=6, width=2)
         if not initial:
             self._set("accent_colour", colour, restart=True)
 

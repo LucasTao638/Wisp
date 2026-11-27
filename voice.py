@@ -82,6 +82,89 @@ def to_simplified(text):
     return text.translate(_T2S)
 
 
+# ---------------- Wisp's "composed AI" voice ----------------
+def _shift(value, amount, unit):
+    """'+8%' shifted by -5 -> '+3%'."""
+    try:
+        n = int(str(value).replace(unit, "").strip() or 0) + amount
+    except ValueError:
+        n = amount
+    return f"{n:+d}{unit}"
+
+
+def ai_voice_effect(x, sr):
+    """Gives the neural voice a subtle synthetic, composed quality - like an AI speaking through a good
+    speaker system - while keeping every word clear. x: mono float32 samples. Returns processed samples."""
+    import numpy as np
+    x = x.astype(np.float32)
+    # 1. clean low end: remove a ~110 Hz moving average (a fast, gentle high-pass)
+    n = max(1, int(sr / 110))
+    csum = np.cumsum(np.concatenate([np.zeros(n, dtype=np.float64), x.astype(np.float64)]))
+    x = (x - ((csum[n:] - csum[:-n]) / n)).astype(np.float32)
+
+    def delayed(sig, seconds, gain):
+        d = int(sr * seconds)
+        out = np.zeros(len(sig) + d, dtype=np.float32)
+        out[d:] = sig * gain
+        return out
+
+    tail = int(sr * 0.35)
+    y = np.zeros(len(x) + tail, dtype=np.float32)
+    y[:len(x)] += x
+    # 2. a faint metallic edge: a very short echo (comb) a few milliseconds behind
+    edge = delayed(x, 0.0048, 0.22)
+    y[:len(edge)] += edge[:len(y)]
+    # 3. a small sense of space: early reflections, then a soft decaying tail
+    for secs, gain in ((0.017, 0.13), (0.029, 0.10), (0.043, 0.075), (0.061, 0.055), (0.083, 0.04)):
+        r = delayed(x, secs, gain)
+        y[:len(r)] += r[:len(y)]
+    fb = np.zeros_like(y)
+    d = int(sr * 0.047)
+    for start in range(d, len(y), d):   # feedback comb for the tail, very quiet (a block at a time)
+        end = min(start + d, len(y))
+        fb[start:end] = y[start - d:end - d] * 0.05 + fb[start - d:end - d] * 0.45
+    y += fb
+    # 4. level it out without clipping
+    peak = float(np.max(np.abs(y))) or 1.0
+    return (y / peak * 0.89).astype(np.float32)
+
+
+def ai_voice(mp3_path):
+    """The mp3 from the neural voice -> a processed wav (cached). Falls back to the mp3 if anything fails."""
+    wav_path = mp3_path[:-4] + ".ai.wav"
+    if os.path.exists(wav_path):
+        return wav_path
+    try:
+        import av
+        import numpy as np
+        with av.open(mp3_path) as container:
+            stream = container.streams.audio[0]
+            sr = stream.rate or 24000
+            chunks = [frame.to_ndarray() for frame in container.decode(stream)]
+        samples = np.concatenate([c.reshape(c.shape[0], -1).mean(axis=0) if c.ndim > 1 else c for c in chunks])
+        if samples.dtype.kind == "i":
+            samples = samples / 32768.0
+        y = ai_voice_effect(samples, sr)
+        _write_wav(wav_path, y, sr)
+        return wav_path
+    except Exception as exc:
+        print(f"(voice effect skipped: {exc})")
+        return mp3_path
+
+
+def _write_wav(path, samples, sr):
+    import wave
+    import numpy as np
+    pcm = (np.clip(samples, -1, 1) * 32767).astype("<i2").tobytes()
+    tmp = path + ".part"
+    with wave.open(tmp, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(int(sr))
+        w.writeframes(pcm)
+    os.replace(tmp, path)
+
+
 # ---------------- knowing when you've finished talking ----------------
 _TRAILING_EN = {"and", "or", "but", "so", "because", "then", "the", "a", "an", "to", "of", "with", "for", "in", "on",
                 "at", "from", "about", "like", "um", "uh", "er", "erm", "hmm", "if", "when", "that", "which", "my",
@@ -292,6 +375,11 @@ class Speaker:
         self.edge_voice = cfg.get("edge_voice", "en-GB-RyanNeural")
         self.edge_rate = cfg.get("edge_rate", "+0%")
         self.edge_pitch = cfg.get("edge_pitch", "+0Hz")
+        # "ai": Wisp's own composed, slightly deeper voice with a subtle synthetic edge; "natural": plain
+        self.style = cfg.get("voice_style", "ai")
+        if self.style == "ai":
+            self.edge_rate = _shift(self.edge_rate, -5, "%")
+            self.edge_pitch = _shift(self.edge_pitch, -6, "Hz")
         # the offline fallback voice: a Windows SAPI voice name, or a macOS 'say' voice (e.g. "Daniel")
         self.system_voice = cfg.get("mac_voice" if sysplat.IS_MAC else "windows_voice", "Daniel" if sysplat.IS_MAC else "")
         self.windows_rate = int(cfg.get("voice_rate", 1))
@@ -351,18 +439,20 @@ class Speaker:
         os.makedirs(self.CACHE, exist_ok=True)
         key = hashlib.sha1(f"{self.edge_voice}|{self.edge_rate}|{self.edge_pitch}|{text}".encode()).hexdigest()
         path = os.path.join(self.CACHE, key + ".mp3")
-        if os.path.exists(path):
-            return path
-        tmp = path + f".{threading.get_ident()}.part"
-        communicate = edge_tts.Communicate(text, self.edge_voice, rate=self.edge_rate, pitch=self.edge_pitch)
-        asyncio.run(communicate.save(tmp))
-        os.replace(tmp, path)
-        self._prune_cache()
+        if not os.path.exists(path):
+            tmp = path + f".{threading.get_ident()}.part"
+            communicate = edge_tts.Communicate(text, self.edge_voice, rate=self.edge_rate, pitch=self.edge_pitch)
+            asyncio.run(communicate.save(tmp))
+            os.replace(tmp, path)
+            self._prune_cache()
+        if self.style == "ai":
+            return ai_voice(path)
         return path
 
     def _prune_cache(self, keep=300):
         try:
-            files = sorted((os.path.join(self.CACHE, f) for f in os.listdir(self.CACHE) if f.endswith(".mp3")),
+            files = sorted((os.path.join(self.CACHE, f) for f in os.listdir(self.CACHE)
+                            if f.endswith((".mp3", ".wav"))),
                            key=os.path.getmtime)
             for f in files[:-keep]:
                 os.remove(f)

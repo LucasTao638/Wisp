@@ -182,14 +182,16 @@ def status_card(parent, f, accent, get_api_key, on_ready=None):
     import ui_kit as ui
     from i18n import L
 
-    card = tk.Frame(parent, bg=ui.CARD, padx=14, pady=10)
+    import holo
+    card = holo.Card(parent, accent=accent, padx=14, pady=10)
     top = tk.Frame(card, bg=ui.CARD)
     top.pack(fill="x")
+    tk.Label(top, text="CLAUDE CODE", bg=ui.CARD, fg=holo.MUTED, font=f["label"]).pack(side="left", padx=(0, 10))
     title = tk.Label(top, bg=ui.CARD, fg=ui.TEXT, font=f["body"], anchor="w")
     title.pack(side="left")
     buttons = tk.Frame(top, bg=ui.CARD)
     buttons.pack(side="right")
-    status = tk.Label(card, bg=ui.CARD, fg=ui.DIM, font=f["small"], anchor="w", justify="left", wraplength=500)
+    status = tk.Label(card, bg=ui.CARD, fg=ui.DIM, font=f["small"], anchor="w", justify="left", wraplength=560)
     status.pack(fill="x", pady=(6, 0))
     busy = {"on": False}
 
@@ -208,9 +210,10 @@ def status_card(parent, f, accent, get_api_key, on_ready=None):
                 return
             for w in buttons.winfo_children():
                 w.destroy()
+            import holo
             for label, fn, primary in specs:
-                kw = {"bg": accent, "fg": "#031018", "hover": accent} if primary else {}
-                ui.FlatButton(buttons, label, fn, font=f["small"], **kw).pack(side="left", padx=(6, 0))
+                holo.Button(buttons, label, fn, kind="primary" if primary else "ghost", font=f["small"],
+                            accent=accent).pack(side="left", padx=(6, 0))
         safe(draw)
 
     def refresh():

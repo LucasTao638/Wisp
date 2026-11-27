@@ -234,7 +234,8 @@ class AudioPlayer:
             buf = ctypes.create_unicode_buffer(256)
             mci = lambda cmd: (ctypes.windll.winmm.mciSendStringW(cmd, buf, 255, 0), buf.value)[1]
             alias = f"wisp{threading.get_ident() % 100000}_{int(time.time() * 1000) % 100000}"
-            mci(f'open "{self.path}" type mpegvideo alias {alias}')
+            kind = "waveaudio" if self.path.lower().endswith(".wav") else "mpegvideo"
+            mci(f'open "{self.path}" type {kind} alias {alias}')
             mci(f"play {alias}")
             time.sleep(0.05)
             while not should_stop() and mci(f"status {alias} mode") == "playing":

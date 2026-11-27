@@ -25,7 +25,7 @@ Talk to it (or type), and Wisp searches the web properly, opens and controls app
 2. Double-click **`setup.bat`**. If Windows says *"Windows protected your PC"*, click **More info > Run anyway** (Wisp is free and isn't code-signed).
 3. Press **Enter** to install to the suggested folder (or type **C** to choose your own).
 
-Or, in **PowerShell**: `powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex"`
+Or, in **PowerShell**: `irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex`
 
 ### macOS 12 or newer (beta)
 1. Download **`wisp-v…-mac.zip`** from [Releases](../../releases) and double-click it to unzip.

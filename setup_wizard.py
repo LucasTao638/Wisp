@@ -7,6 +7,7 @@ import tkinter as tk
 import autostart
 import claude_setup
 import credentials
+import holo
 import i18n
 import ui_kit as ui
 from app_info import APP_NAME, VERSION
@@ -15,9 +16,10 @@ from i18n import L
 KEYS_URL = "https://console.anthropic.com/settings/keys"
 LIMITS_URL = "https://console.anthropic.com/settings/limits"
 
-LINE = "#1f2731"      # thin dividers
-CARD_HI = "#18212b"   # a selected card
-DARK_TEXT = "#031018"  # text on accent-coloured buttons
+LINE = holo.LINE
+CARD_HI = holo.PANEL_HI
+DARK_TEXT = holo.ON_ACCENT
+W = 720  # window width
 
 
 class SetupWizard:
@@ -29,8 +31,9 @@ class SetupWizard:
         r = self.root
         r.title(f"{APP_NAME} setup")
         r.configure(bg=ui.BG)
-        r.geometry("680x640")
+        r.geometry(f"{W}x700")
         r.resizable(False, False)
+        holo.dark_titlebar(r)
         self.f = ui.fonts(r)
         self.choices = {
             "name": self.cfg.get("user_name", ""),
@@ -38,6 +41,7 @@ class SetupWizard:
             "wake": self.cfg.get("wake_word", "hey_jarvis"),
             "autostart": autostart.is_enabled() if sys.platform in ("win32", "darwin") else False,
             "stats": self.cfg.get("share_usage_stats", True),
+            "personality": self.cfg.get("personality", "butler"),
         }
         self.key_ok = credentials.has_api_key()
         self.connected = False
@@ -58,47 +62,68 @@ class SetupWizard:
         r.after(800, lambda: r.attributes("-topmost", False))
         r.after(100, r.focus_force)
 
-        # top: step counter + progress bar
-        top = tk.Frame(r, bg=ui.BG)
-        top.pack(fill="x", padx=40, pady=(22, 0))
-        tk.Label(top, text=APP_NAME.upper(), bg=ui.BG, fg=self.accent, font=self.f["head"]).pack(side="left")
-        self.step_label = tk.Label(top, bg=ui.BG, fg=ui.DIM, font=self.f["small"])
-        self.step_label.pack(side="right")
-        self.progress = tk.Canvas(r, height=3, bg=LINE, highlightthickness=0)
-        self.progress.pack(fill="x", padx=40, pady=(10, 0))
+        # top: title strip + segmented progress
+        self.top = tk.Canvas(r, width=W, height=92, bg=ui.BG, highlightthickness=0)
+        self.top.pack(fill="x")
 
-        # bottom: Back / Next
+        # bottom: version on the left, Back / Next on the right
         nav = tk.Frame(r, bg=ui.BG)
-        nav.pack(fill="x", side="bottom", padx=40, pady=16)
-        tk.Frame(r, bg=LINE, height=1).pack(fill="x", side="bottom")  # divider above the buttons
-        self.next_btn = ui.FlatButton(nav, "Next", self.next, bg=self.accent, fg=DARK_TEXT, hover=self.accent,
-                                      font=self.f["head"])
+        nav.pack(fill="x", side="bottom", padx=40, pady=(14, 18))
+        line = tk.Canvas(r, height=2, bg=ui.BG, highlightthickness=0)
+        line.pack(fill="x", side="bottom", padx=40)
+        line.create_line(0, 1, 4000, 1, fill=LINE)
+        line.create_line(0, 1, 60, 1, fill=holo.mix(ui.BG, self.accent, 0.6), width=2)
+        tk.Label(nav, text=f"WISP  v{VERSION}", bg=ui.BG, fg=holo.MUTED, font=self.f["label"]).pack(side="left")
+        self.next_btn = holo.Button(nav, "Next", self.next, kind="primary", font=self.f["head"], accent=self.accent,
+                                    padx=22, pady=9)
         self.next_btn.pack(side="right")
-        self.back_btn = ui.FlatButton(nav, "Back", self.back, bg=ui.BG, hover=ui.CARD)
-        self.back_btn.pack(side="right", padx=8)
+        self.back_btn = holo.Button(nav, "Back", self.back, kind="ghost", font=self.f["body"], accent=self.accent,
+                                    padx=16, pady=8)
+        self.back_btn.pack(side="right", padx=10)
 
         # middle: the page
         self.body = tk.Frame(r, bg=ui.BG)
-        self.body.pack(fill="both", expand=True, padx=40, pady=(24, 0))
+        self.body.pack(fill="both", expand=True, padx=40, pady=(18, 0))
 
         self.show()
 
     # ---------- navigation ----------
+    def _draw_top(self):
+        c, a = self.top, self.accent
+        c.delete("all")
+        holo.grid_texture(c, W, 92, holo.mix(ui.BG, a, 0.04), step=16)
+        total, i = len(self.pages), self.index
+        c.create_text(40, 26, text="◢ WISP  //  " + L("SETUP", "设置"), anchor="w", font=self.f["label"],
+                      fill=a)
+        c.create_text(W - 40, 26, text=L(f"STEP {i + 1:02d} / {total:02d}", f"第 {i + 1} / {total} 步"),
+                      anchor="e", font=self.f["label"], fill=ui.DIM)
+        # segmented progress: done = filled, current = glowing outline, later = faint
+        x0, x1, y, h, gap = 40, W - 40, 44, 8, 6
+        seg = (x1 - x0 - gap * (total - 1)) / total
+        for k in range(total):
+            sx = x0 + k * (seg + gap)
+            pts = holo.chamfer(sx, y, sx + seg, y + h, 3, "tl br")
+            if k < i:
+                c.create_polygon(pts, fill=holo.mix(ui.BG, a, 0.7), outline="")
+            elif k == i:
+                c.create_polygon(pts, fill=holo.mix(ui.BG, a, 0.25), outline=a)
+            else:
+                c.create_polygon(pts, fill=holo.PANEL, outline=LINE)
+        name = self.pages[i][1]
+        sx = x0 + i * (seg + gap)
+        c.create_text(sx, y + 24, text=holo.spaced(L(name[0], name[1])), anchor="w", font=self.f["label"],
+                      fill=holo.mix(ui.BG, a, 0.85))
+        c.create_line(0, 91, W, 91, fill=holo.LINE_SOFT)
+
     def show(self):
         for w in self.body.winfo_children():
             w.destroy()
         page, name = self.pages[self.index]
         page()
-        total = len(self.pages)
-        self.step_label.config(text=L(f"Step {self.index + 1} of {total}  ·  {name[0]}",
-                                      f"第 {self.index + 1} / {total} 步  ·  {name[1]}"))
-        self.root.update_idletasks()
-        width = max(self.progress.winfo_width(), 600)
-        self.progress.delete("all")
-        self.progress.create_rectangle(0, 0, width * (self.index + 1) / total, 3, fill=self.accent, outline="")
+        self._draw_top()
         self.back_btn.set_enabled(self.index > 0)
-        last = self.index == total - 1
-        self.next_btn.config(text=L("Start Wisp", "启动 Wisp") if last else L("Next  →", "下一步  →"))
+        last = self.index == len(self.pages) - 1
+        self.next_btn.config(text=L("Start Wisp  ▸", "启动 Wisp  ▸") if last else L("Next  ▸", "下一步  ▸"))
         self.back_btn.config(text=L("Back", "上一步"))
 
     def _save_name(self):
@@ -124,34 +149,32 @@ class SetupWizard:
         tk.Label(self.body, text=title, bg=ui.BG, fg=ui.TEXT, font=self.f["title"], anchor="w").pack(fill="x")
         if text:
             tk.Label(self.body, text=text, bg=ui.BG, fg=ui.DIM, font=self.f["body"], justify="left", anchor="w",
-                     wraplength=600).pack(fill="x", pady=(6, 18))
+                     wraplength=630).pack(fill="x", pady=(4, 16))
 
     def note(self, parent, text, colour=None, bg=ui.BG, pady=(12, 0)):
         label = tk.Label(parent, text=text, bg=bg, fg=colour or ui.DIM, font=self.f["small"], justify="left",
-                         anchor="w", wraplength=580)
+                         anchor="w", wraplength=610)
         label.pack(fill="x", pady=pady)
         return label
 
     def choice(self, parent, title, subtitle, selected, command, side=None):
-        """A clickable card with a ● / ○ marker. Used for languages, options, voices and wake phrases."""
-        bg = CARD_HI if selected else ui.CARD
-        card = tk.Frame(parent, bg=bg, highlightthickness=1, cursor="hand2",
-                        highlightbackground=self.accent if selected else LINE)
-        inner = tk.Frame(card, bg=bg, cursor="hand2")
-        inner.pack(fill="both", expand=True, padx=14, pady=10)
-        top = tk.Frame(inner, bg=bg, cursor="hand2")
+        """A clickable card: ◆ when chosen (glowing border), ◇ when not. Used for languages, options,
+        voices and wake phrases."""
+        bg = CARD_HI if selected else holo.PANEL
+        card = holo.Card(parent, accent=self.accent, padx=14, pady=10, bg=bg, selected=selected, cursor="hand2")
+        top = tk.Frame(card, bg=bg, cursor="hand2")
         top.pack(fill="x")
-        widgets = [card, inner, top]
-        mark = tk.Label(top, text="●" if selected else "○", bg=bg, fg=self.accent if selected else ui.DIM,
+        mark = tk.Label(top, text="◆" if selected else "◇", bg=bg, fg=self.accent if selected else holo.MUTED,
                         font=self.f["body"], cursor="hand2")
-        mark.pack(side="left", padx=(0, 8))
-        head = tk.Label(top, text=title, bg=bg, fg=ui.TEXT, font=self.f["head"], anchor="w", cursor="hand2")
+        mark.pack(side="left", padx=(0, 10))
+        head = tk.Label(top, text=title, bg=bg, fg=ui.TEXT if selected else holo.mix(ui.TEXT, ui.BG, 0.15),
+                        font=self.f["head"], anchor="w", cursor="hand2")
         head.pack(side="left")
-        widgets += [mark, head]
+        widgets = [card, top, mark, head]
         if subtitle:
-            sub = tk.Label(inner, text=subtitle, bg=bg, fg=ui.DIM, font=self.f["small"], anchor="w",
+            sub = tk.Label(card, text=subtitle, bg=bg, fg=ui.DIM, font=self.f["small"], anchor="w",
                            justify="left", cursor="hand2")
-            sub.pack(fill="x", padx=(22, 0))
+            sub.pack(fill="x", padx=(24, 0), pady=(2, 0))
             widgets.append(sub)
         for w in widgets:
             w.bind("<ButtonRelease-1>", lambda e: command())
@@ -161,25 +184,28 @@ class SetupWizard:
             card.pack(fill="x", pady=4)
         return top
 
-    def numbered(self, parent, number, title, hint=None, bg=ui.CARD):
+    def numbered(self, parent, number, title, hint=None, bg=holo.PANEL):
         row = tk.Frame(parent, bg=bg)
         row.pack(fill="x", pady=(10, 2))
-        tk.Label(row, text=str(number), bg=self.accent, fg=DARK_TEXT, font=self.f["small"], width=2).pack(
-            side="left", padx=(0, 10))
+        badge = tk.Canvas(row, width=30, height=20, bg=bg, highlightthickness=0)
+        badge.create_polygon(holo.chamfer(0.5, 0.5, 29, 19, 4), fill=holo.mix(bg, self.accent, 0.18),
+                             outline=self.accent)
+        badge.create_text(15, 10, text=f"{number:02d}", font=self.f["label"], fill=self.accent)
+        badge.pack(side="left", padx=(0, 10))
         tk.Label(row, text=title, bg=bg, fg=ui.TEXT, font=self.f["head"], anchor="w").pack(side="left")
         if hint:
             tk.Label(parent, text=hint, bg=bg, fg=ui.DIM, font=self.f["small"], anchor="w", justify="left",
-                     wraplength=540).pack(fill="x", padx=(30, 0), pady=(0, 4))
+                     wraplength=560).pack(fill="x", padx=(40, 0), pady=(0, 6))
 
     def button(self, parent, text, command, primary=False):
-        kw = {"bg": self.accent, "fg": DARK_TEXT, "hover": self.accent} if primary else {}
-        return ui.FlatButton(parent, text, command, font=self.f["small"], **kw)
+        return holo.Button(parent, text, command, kind="primary" if primary else "ghost", font=self.f["small"],
+                           accent=self.accent)
 
     def switch_row(self, label, value, on_change):
-        row = tk.Frame(self.body, bg=ui.CARD, padx=16, pady=12)
-        row.pack(fill="x", pady=(14, 0))
-        tk.Label(row, text=label, bg=ui.CARD, fg=ui.TEXT, font=self.f["body"]).pack(side="left")
-        ui.Switch(row, value, on_change, self.accent).pack(side="right")
+        row = holo.Card(self.body, accent=self.accent, padx=16, pady=10)
+        row.pack(fill="x", pady=(12, 0))
+        tk.Label(row, text=label, bg=holo.PANEL, fg=ui.TEXT, font=self.f["body"]).pack(side="left")
+        holo.Switch(row, value, on_change, self.accent).pack(side="right")
 
     # ---------- 1. language ----------
     def page_language(self):
@@ -213,7 +239,7 @@ class SetupWizard:
         grid = tk.Frame(self.body, bg=ui.BG)
         grid.pack(fill="x")
         for i, (title, text) in enumerate(things):
-            cell = tk.Frame(grid, bg=ui.CARD, padx=14, pady=12)
+            cell = holo.Card(grid, accent=self.accent, padx=14, pady=12)
             cell.grid(row=i // 2, column=i % 2, sticky="nsew", padx=(0, 10) if i % 2 == 0 else 0, pady=5)
             tk.Label(cell, text=title, bg=ui.CARD, fg=ui.TEXT, font=self.f["head"], anchor="w").pack(fill="x")
             tk.Label(cell, text=text, bg=ui.CARD, fg=ui.DIM, font=self.f["small"], anchor="w").pack(fill="x")
@@ -236,7 +262,7 @@ class SetupWizard:
                     L("No key to copy. Sign in in your browser.", "无需复制密钥，在浏览器中登录。"),
                     self.connect_way == "signin", lambda: self.pick_way("signin"), side="right")
 
-        panel = tk.Frame(self.body, bg=ui.CARD, padx=18, pady=8)
+        panel = holo.Card(self.body, accent=self.accent, padx=18, pady=8)
         panel.pack(fill="x", pady=(12, 0))
         if self.connect_way == "key":
             self.connect_with_key(panel)
@@ -355,7 +381,16 @@ class SetupWizard:
         tk.Label(self.body, text=L("Your name (optional)", "你的名字（选填）"), bg=ui.BG, fg=ui.DIM,
                  font=self.f["small"], anchor="w").pack(fill="x")
         self.name_entry = ui.entry(self.body, self.choices["name"], width=32, f=self.f["body"])
-        self.name_entry.pack(anchor="w", ipady=6, pady=(4, 16))
+        self.name_entry.pack(anchor="w", ipady=6, pady=(4, 14))
+        tk.Label(self.body, text=L("Personality", "性格"), bg=ui.BG, fg=ui.DIM, font=self.f["small"],
+                 anchor="w").pack(fill="x", pady=(0, 2))
+        cards = tk.Frame(self.body, bg=ui.BG)
+        cards.pack(fill="x", pady=(0, 14))
+        for side, (code, title, sub) in zip(("left", "right"), (
+                ("butler", L("Composed butler", "沉稳管家"), L("Calm, polite, dry wit", "冷静、礼貌、含蓄幽默")),
+                ("friendly", L("Friendly", "亲切"), L("Casual and relaxed", "随和、轻松")))):
+            self.choice(cards, title, sub, self.choices["personality"] == code,
+                        lambda c=code: self.pick_personality(c), side=side)
         tk.Label(self.body, text=L("Voice  (▶ to hear it)", "声音（点 ▶ 试听）"), bg=ui.BG, fg=ui.DIM,
                  font=self.f["small"], anchor="w").pack(fill="x", pady=(0, 2))
         voices = ui.VOICES_ZH if i18n.is_zh() else ui.VOICES
@@ -366,18 +401,22 @@ class SetupWizard:
         for i, (code, label) in enumerate(voices):
             selected = self.choices["voice"] == code
             bg = CARD_HI if selected else ui.CARD
-            cell = tk.Frame(grid, bg=bg, highlightthickness=1, cursor="hand2",
-                            highlightbackground=self.accent if selected else LINE)
+            cell = holo.Card(grid, accent=self.accent, padx=0, pady=0, bg=bg, selected=selected, cursor="hand2")
             cell.grid(row=i // 2, column=i % 2, sticky="nsew", padx=(0, 8) if i % 2 == 0 else 0, pady=3)
-            mark = tk.Label(cell, text=("●  " if selected else "○  ") + label, bg=bg, anchor="w",
+            mark = tk.Label(cell, text=("◆  " if selected else "◇  ") + label, bg=bg, anchor="w",
                             fg=ui.TEXT if selected else ui.DIM, font=self.f["body"], cursor="hand2")
             mark.pack(side="left", fill="x", expand=True, padx=10, pady=7)
             for w in (cell, mark):
                 w.bind("<ButtonRelease-1>", lambda e, c=code: self.pick_voice(c))
-            ui.FlatButton(cell, "▶", lambda c=code: self.preview(c), bg=bg, hover=ui.CARD,
-                          font=self.f["small"]).pack(side="right", padx=4)
+            holo.Button(cell, "▶", lambda c=code: self.preview(c), font=self.f["small"], accent=self.accent,
+                        padx=9, pady=3).pack(side="right", padx=6)
         grid.columnconfigure(0, weight=1, uniform="v")
         grid.columnconfigure(1, weight=1, uniform="v")
+
+    def pick_personality(self, code):
+        self._save_name()
+        self.choices["personality"] = code
+        self.show()
 
     def pick_voice(self, code):
         self._save_name()
@@ -413,7 +452,7 @@ class SetupWizard:
 
     def mac_permissions(self):
         """macOS asks for these the first time Wisp needs them. If a prompt was missed or refused, fix it here."""
-        card = tk.Frame(self.body, bg=ui.CARD, padx=16, pady=10)
+        card = holo.Card(self.body, accent=self.accent, padx=16, pady=10)
         card.pack(fill="x", pady=(14, 0))
         tk.Label(card, text=L("Mac permissions", "Mac 权限"), bg=ui.CARD, fg=ui.TEXT, font=self.f["head"],
                  anchor="w").pack(fill="x")
@@ -448,7 +487,7 @@ class SetupWizard:
                 (L("Never sent", "绝不发送"), L("Anything you say or type\nClaude's replies\nFiles or screenshots\n"
                                                 "Your location", "你说的话或输入的内容\nClaude 的回复\n文件或截图\n你的位置"),
                  ui.RED)]):
-            cell = tk.Frame(cols, bg=ui.CARD, padx=14, pady=12)
+            cell = holo.Card(cols, accent=self.accent, padx=14, pady=12)
             cell.grid(row=0, column=i, sticky="nsew", padx=(0, 10) if i == 0 else 0)
             tk.Label(cell, text=title, bg=ui.CARD, fg=colour, font=self.f["head"], anchor="w").pack(fill="x")
             tk.Label(cell, text=items, bg=ui.CARD, fg=ui.TEXT, font=self.f["small"], anchor="w",
@@ -478,7 +517,7 @@ class SetupWizard:
                  (key("show_hide_key", "ctrl+shift+space"), L("hide / show", "隐藏 / 显示")),
                  (L("“in the background, …”", "“在后台帮我……”"), L("long tasks while you work", "后台处理耗时任务")),
                  (L("“when I say X, do Y”", "“当我说X的时候，做Y”"), L("make your own routine", "创建你自己的例程"))]
-        card = tk.Frame(self.body, bg=ui.CARD, padx=16, pady=10)
+        card = holo.Card(self.body, accent=self.accent, padx=16, pady=10)
         card.pack(fill="x")
         for k, what in tips:
             row = tk.Frame(card, bg=ui.CARD)
@@ -496,6 +535,7 @@ class SetupWizard:
     def finish(self):
         c = self.choices
         ui.save_config({"user_name": c["name"], "edge_voice": c["voice"], "voice_engine": "edge",
+                        "personality": c["personality"],
                         "language": i18n.LANG, "wake_word": c["wake"], "share_usage_stats": bool(c["stats"]),
                         "setup_done": True})
         if sys.platform in ("win32", "darwin"):
