@@ -57,6 +57,29 @@ The phone app is a web app, so there's nothing to download from an app store. Se
 4. Open Wisp from your home screen. Hold the mic button to talk, or type. You can also watch and control the computer's screen, use media keys, timers and routines.
 
 Wisp can also send notifications to any phone (install the free **ntfy** app, tap **+** and subscribe to the name shown in Wisp > Phone) and fully control an **Android** phone through Wireless debugging. iPhones don't allow other apps to control them.
+#### Letting Wisp control your Android phone (optional)
+Wisp talks to your phone over **Wireless debugging**, so there's nothing to install on the phone. You turn on Developer options once, then pair. Menus differ a little between phones and software versions, so if something isn't where it says, search **Settings** for "build number" (or "OS version"), then for "wireless debugging".
+
+| Phone | 1. Turn on Developer options (tap 7 times) | 2. Find Wireless debugging |
+|---|---|---|
+| Xiaomi / Redmi / POCO | Settings > My device (or About phone) > All specs > **OS version** / MIUI version | Settings > Additional settings > Developer options > Wireless debugging |
+| Samsung | Settings > About phone > Software information > **Build number** | Settings > Developer options (at the bottom) > Wireless debugging |
+| Google Pixel | Settings > About phone > **Build number** | Settings > System > Developer options > Wireless debugging |
+| OnePlus | Settings > About device > Version > **Build number** | Settings > System (or Additional settings) > Developer options > Wireless debugging |
+| OPPO / Realme | Settings > About device (or About phone) > Version > **Build number** | Settings > Additional settings (or System settings) > Developer options > Wireless debugging |
+| Vivo / iQOO | Settings > System management (or More settings) > About phone > **Software version** | Settings > System management > Developer options > Wireless debugging |
+| Motorola | Settings > About phone > **Build number** | Settings > System > Developer options > Wireless debugging |
+| Nothing | Settings > About phone > **Build number** | Settings > System > Developer options > Wireless debugging |
+| Huawei / Honor | Settings > About phone > **Build number** | Settings > System & updates > Developer options > Wireless debugging (not on every model) |
+| Sony | Settings > About phone > **Build number** | Settings > System > Developer options > Wireless debugging |
+| iPhone | Not possible: Apple doesn't allow other apps to control an iPhone (notifications and the phone app still work) | - |
+
+For all of them, once Wireless debugging is on:
+1. Make sure the phone is on the **same Wi-Fi** as your computer.
+2. Tap the words **"Wireless debugging"** (not just the switch), then **"Pair device with pairing code"**.
+3. Type the **IP address & port** and the **6-digit code** it shows into Wisp's Android setup window (Wisp > Phone), then click **Pair and connect**.
+
+**Xiaomi / Redmi tip:** these phones sometimes need one extra switch for tapping and typing to work. In Developer options, also turn on **"USB debugging (Security settings)"**. It may ask you to sign in to a Mi account.
 ### Uninstalling
 **Settings > System > Uninstall Wisp**. On Windows you can also use **Settings > Apps**. It asks whether to keep your settings and memory.
 
