@@ -1,0 +1,1 @@
+{"name": "Wisp", "short_name": "Wisp", "start_url": "./", "scope": "./", "display": "standalone", "background_color": "#05080c", "theme_color": "#05080c", "icons": [{"src": "icon.svg", "sizes": "any", "type": "image/svg+xml"}]}

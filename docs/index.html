@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#04080c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Wisp">
+<title>Wisp</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<!--
+  Wisp's phone app. One page, used two ways:
+    - on your Wi-Fi it's served by Wisp itself (http://<your PC>:8765)
+    - anywhere else it's served from GitHub Pages, and talks to your PC through the secure link Wisp makes
+      (it finds the link's current address on a private ntfy.sh channel - see tunnel.py)
+  Your phone pairs once by scanning the QR code in Wisp > Phone; every request carries the secret token it got.
+-->
+<style>
+  :root {
+    --bg: #04080c; --panel: #08121a; --panel-hi: #0c1b26; --line: #16323f; --line-soft: #0f2430;
+    --text: #dff6ff; --dim: #7293a3; --muted: #3d5866; --accent: #38d6ff; --amber: #ffb547; --red: #ff5468;
+    --green: #45e3a0; --on-accent: #021016;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --cut: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+    --cut-s: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+    --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 15px/1.45 var(--sans); }
+  body { overflow: hidden; overscroll-behavior: none;
+    background-image: linear-gradient(rgba(56,214,255,.035) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(56,214,255,.035) 1px, transparent 1px);
+    background-size: 22px 22px; }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+  .label { font: 700 10.5px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .dim { color: var(--dim); }
+  .hidden { display: none !important; }
+
+  /* ---------- frame ---------- */
+  #app { display: flex; flex-direction: column; height: 100%; }
+  header { padding: calc(12px + var(--safe-t)) 16px 10px; display: flex; align-items: center; gap: 10px;
+           border-bottom: 1px solid var(--line-soft); background: rgba(4,8,12,.86); backdrop-filter: blur(8px); }
+  .diamond { width: 12px; height: 12px; transform: rotate(45deg); background: var(--dim); flex: none;
+             box-shadow: 0 0 10px currentColor; transition: background .3s; }
+  .state-listening .diamond { background: var(--accent); animation: pulse 1s infinite; }
+  .state-thinking .diamond { background: var(--amber); animation: pulse .8s infinite; }
+  .state-speaking .diamond { background: var(--green); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { opacity: .45; transform: rotate(45deg) scale(.8); } }
+  #stateText { font: 700 11px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+  .state-listening #stateText { color: var(--accent); } .state-thinking #stateText { color: var(--amber); }
+  .state-speaking #stateText { color: var(--green); }
+  #brand { margin-left: auto; font: 700 11px/1 var(--mono); letter-spacing: .2em; color: var(--muted); }
+  #conn { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+  #conn.ok { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  #stopBtn { padding: 7px 12px; font: 700 11px/1 var(--mono); letter-spacing: .12em; color: #ffc2c9;
+             background: rgba(255,84,104,.16); border: 1px solid rgba(255,84,104,.55); clip-path: var(--cut-s); }
+  main { flex: 1; overflow: hidden; position: relative; }
+  .tab { position: absolute; inset: 0; overflow-y: auto; padding: 14px 14px 20px; -webkit-overflow-scrolling: touch; }
+  nav { display: flex; border-top: 1px solid var(--line); background: rgba(4,8,12,.94);
+        padding-bottom: var(--safe-b); }
+  nav button { flex: 1; padding: 9px 0 10px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+               font: 700 9.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+               position: relative; }
+  nav button svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.6; }
+  nav button.on { color: var(--accent); }
+  nav button.on::before { content: ""; position: absolute; top: -1px; left: 30%; right: 30%; height: 2px;
+                          background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+
+  /* ---------- building blocks ---------- */
+  .card { position: relative; background: var(--panel); border: 1px solid var(--line); padding: 14px;
+          margin-bottom: 10px; clip-path: var(--cut); }
+  .card::after { content: ""; position: absolute; right: 5px; top: 5px; width: 9px; height: 9px;
+                 border-top: 2px solid var(--accent); border-right: 2px solid var(--accent); opacity: .55; }
+  .btn { padding: 10px 14px; background: rgba(56,214,255,.07); border: 1px solid rgba(56,214,255,.45);
+         clip-path: var(--cut-s); color: var(--text); font-size: 14px; }
+  .btn:active { background: rgba(56,214,255,.25); }
+  .btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 700; }
+  .btn.danger { border-color: rgba(255,84,104,.6); color: #ffc2c9; background: rgba(255,84,104,.1); }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tile { padding: 14px 6px 10px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+          background: var(--panel); border: 1px solid var(--line); clip-path: var(--cut-s); font-size: 12px; color: var(--dim); }
+  .tile svg { width: 26px; height: 26px; stroke: var(--accent); fill: none; stroke-width: 1.6; }
+  .tile:active { background: var(--panel-hi); border-color: var(--accent); }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .row + .row { margin-top: 10px; }
+  .grow { flex: 1; min-width: 0; }
+  h2 { margin: 18px 4px 10px; }
+  input[type=text], input[type=tel] { width: 100%; padding: 12px; background: var(--panel-hi); color: var(--text);
+         border: 1px solid var(--line); font: 16px var(--sans); outline: none; border-radius: 0; }
+  input:focus { border-color: var(--accent); }
+  .switch { width: 46px; height: 24px; position: relative; background: var(--panel-hi); border: 1px solid var(--line);
+            clip-path: var(--cut-s); flex: none; }
+  .switch::after { content: ""; position: absolute; top: 4px; left: 4px; width: 16px; height: 14px; background: #4a6373;
+                   transition: left .15s; }
+  .switch.on { background: rgba(56,214,255,.2); border-color: var(--accent); }
+  .switch.on::after { left: 24px; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  /* ---------- chat ---------- */
+  #chatTab { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+  #log { flex: 1; overflow-y: auto; padding: 14px 14px 8px; }
+  .msg { margin: 0 0 12px; max-width: 88%; }
+  .msg.you { margin-left: auto; text-align: right; }
+  .msg .who { font: 700 9.5px/1 var(--mono); letter-spacing: .14em; color: var(--muted); margin-bottom: 4px; }
+  .msg .bubble { display: inline-block; text-align: left; padding: 10px 12px; background: var(--panel);
+                 border: 1px solid var(--line); clip-path: var(--cut-s); white-space: pre-wrap; word-wrap: break-word; }
+  .msg.you .bubble { background: rgba(56,214,255,.1); border-color: rgba(56,214,255,.4); }
+  .msg.error .bubble { border-color: rgba(255,84,104,.6); color: #ffc2c9; }
+  .step { font: 12px/1.4 var(--mono); color: var(--amber); opacity: .8; margin: -6px 0 10px; }
+  .note { text-align: center; font: 11px/1.4 var(--mono); color: var(--muted); margin: 4px 0 12px; }
+  #composer { display: flex; gap: 8px; align-items: center; padding: 10px 12px 12px; border-top: 1px solid var(--line-soft);
+              background: rgba(4,8,12,.9); }
+  #say { flex: 1; }
+  #send { padding: 12px 14px; }
+  #mic { width: 54px; height: 54px; flex: none; display: grid; place-items: center; position: relative;
+         background: rgba(56,214,255,.12); border: 1px solid var(--accent); clip-path: var(--cut-s); }
+  #mic svg { width: 24px; height: 24px; stroke: var(--accent); fill: none; stroke-width: 1.8; }
+  #mic.rec { background: var(--accent); box-shadow: 0 0 24px var(--accent); }
+  #mic.rec svg { stroke: var(--on-accent); }
+  #mic.off { opacity: .35; }
+  #recHint { position: absolute; left: 0; right: 0; bottom: 84px; text-align: center; pointer-events: none; }
+  #recHint > span { display: inline-block; padding: 8px 14px; background: var(--panel-hi); border: 1px solid var(--accent);
+                  font: 700 11px/1 var(--mono); letter-spacing: .14em; color: var(--accent); clip-path: var(--cut-s); }
+  .wave { display: inline-flex; gap: 3px; margin-left: 8px; vertical-align: middle; }
+  .wave i { display: inline-block; width: 3px; height: 10px; background: var(--accent); animation: wave .8s infinite ease-in-out; }
+  .wave i:nth-child(2) { animation-delay: .1s } .wave i:nth-child(3) { animation-delay: .2s } .wave i:nth-child(4) { animation-delay: .3s }
+  @keyframes wave { 50% { transform: scaleY(2.2); } }
+
+  /* ---------- screen ---------- */
+  #screenWrap { position: relative; border: 1px solid var(--line); background: #000; touch-action: none; }
+  #screenImg { display: block; width: 100%; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+  #screenWrap::before, #screenWrap::after { content: ""; position: absolute; width: 14px; height: 14px; pointer-events: none; }
+  #screenWrap::before { left: -1px; top: -1px; border-left: 2px solid var(--accent); border-top: 2px solid var(--accent); }
+  #screenWrap::after { right: -1px; bottom: -1px; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); }
+  .ping { position: absolute; width: 34px; height: 34px; margin: -17px; border: 2px solid var(--accent);
+          border-radius: 50%; animation: ping .5s ease-out forwards; pointer-events: none; }
+  @keyframes ping { from { transform: scale(.3); opacity: 1 } to { transform: scale(1.4); opacity: 0 } }
+  .keys { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
+  .keys .btn { padding: 10px 0; font: 700 11px/1 var(--mono); letter-spacing: .08em; }
+
+  /* ---------- pairing / offline ---------- */
+  #gate { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; justify-content: center;
+          padding: 28px; z-index: 5; }
+  #gate h1 { font: 700 26px/1.2 var(--sans); margin: 10px 0 8px; }
+  .pin { letter-spacing: .5em; text-align: center; font: 700 26px var(--mono) !important; }
+  #toast { position: fixed; left: 50%; bottom: calc(86px + var(--safe-b)); transform: translateX(-50%); z-index: 9;
+           background: var(--panel-hi); border: 1px solid var(--accent); padding: 9px 14px; clip-path: var(--cut-s);
+           font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 86%; text-align: center; }
+  #toast.show { opacity: 1; }
+  .timer .left { font: 700 20px var(--mono); color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="app" class="state-ready">
+  <header>
+    <div class="diamond"></div>
+    <div id="stateText">Connecting</div>
+    <span id="brand">WISP</span>
+    <span id="conn" title="Connection"></span>
+    <button id="stopBtn" class="hidden">■ STOP</button>
+  </header>
+
+  <main>
+    <!-- chat -->
+    <section id="chatTab" class="tab">
+      <div id="log"><div class="note" id="hello">Ask Wisp anything — it runs on your computer.</div></div>
+      <div id="recHint" class="hidden"><span>LISTENING<span class="wave"><i></i><i></i><i></i><i></i></span></span></div>
+      <div id="composer">
+        <input id="say" type="text" placeholder="Ask Wisp…" enterkeyhint="send" autocomplete="off">
+        <button id="send" class="btn primary" aria-label="Send">➤</button>
+        <button id="mic" aria-label="Hold to talk"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      </div>
+    </section>
+
+    <!-- live screen -->
+    <section id="screenTab" class="tab hidden">
+      <div class="row" style="margin-bottom:10px"><span class="label">◢ Live screen</span><span class="grow"></span>
+        <span class="dim" style="font-size:12px" id="screenHint">Tap to click · hold for right-click</span></div>
+      <div id="screenWrap"><img id="screenImg" alt=""></div>
+      <div class="row" style="margin-top:10px">
+        <input id="typeBox" type="text" class="grow" placeholder="Type on the computer…" enterkeyhint="send" autocomplete="off">
+        <button class="btn" id="typeSend">Type</button>
+      </div>
+      <div class="keys">
+        <button class="btn" data-key="enter">ENTER</button><button class="btn" data-key="backspace">⌫</button>
+        <button class="btn" data-key="esc">ESC</button><button class="btn" data-key="tab">TAB</button>
+        <button class="btn" data-key="win" id="winKey">WIN</button>
+        <button class="btn" data-scroll="5">▲ SCROLL</button><button class="btn" data-scroll="-5">▼ SCROLL</button>
+        <button class="btn" data-key="up">↑</button><button class="btn" data-key="down">↓</button>
+        <button class="btn" id="dbl">2× CLICK</button>
+      </div>
+      <p class="note" id="screenOff" style="margin-top:14px"></p>
+    </section>
+
+    <!-- controls -->
+    <section id="controlsTab" class="tab hidden">
+      <span class="label">◢ Media</span>
+      <div class="grid" style="margin:10px 0 6px">
+        <button class="tile" data-action="previous"><svg viewBox="0 0 24 24"><path d="M6 5v14M18 5l-9 7 9 7z"/></svg>Previous</button>
+        <button class="tile" data-action="play_pause"><svg viewBox="0 0 24 24"><path d="M7 5l11 7-11 7z"/></svg>Play/Pause</button>
+        <button class="tile" data-action="next"><svg viewBox="0 0 24 24"><path d="M18 5v14M6 5l9 7-9 7z"/></svg>Next</button>
+        <button class="tile" data-action="volume_down"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM17 12h4"/></svg>Volume −</button>
+        <button class="tile" data-action="mute_pc"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM17 9l5 6M22 9l-5 6"/></svg>Mute PC</button>
+        <button class="tile" data-action="volume_up"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4zM17 12h4M19 10v4"/></svg>Volume +</button>
+      </div>
+      <h2 class="label">◢ Wisp</h2>
+      <div class="card">
+        <div class="row"><span class="grow">Speak replies on the computer</span><button class="switch" id="speakPc"></button></div>
+        <div class="row"><span class="grow">Read replies aloud here</span><button class="switch" id="readAloud"></button></div>
+        <div class="row"><span class="grow">Mute Wisp</span><button class="switch" id="muteWisp"></button></div>
+      </div>
+      <div class="grid">
+        <button class="tile" data-action="new_chat"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4zM12 8v5M9.5 10.5h5"/></svg>New chat</button>
+        <button class="tile" id="focusBtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 9v4l3 2M10 3h4"/></svg>Focus 25m</button>
+        <button class="tile" id="lockBtn"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>Lock PC</button>
+      </div>
+      <h2 class="label hidden" id="timersHead">◢ Timers & reminders</h2>
+      <div id="timers"></div>
+      <h2 class="label hidden" id="routinesHead">◢ Routines</h2>
+      <div id="routines"></div>
+      <h2 class="label hidden" id="jobsHead">◢ Background jobs</h2>
+      <div id="jobs"></div>
+      <h2 class="label">◢ This phone</h2>
+      <div class="card">
+        <div class="dim" style="font-size:13px" id="aboutText"></div>
+        <div class="row"><button class="btn danger" id="unpair">Unpair this phone</button></div>
+      </div>
+    </section>
+  </main>
+
+  <nav>
+    <button data-tab="chatTab" class="on"><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</button>
+    <button data-tab="screenTab"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12"/><path d="M8 20h8M12 16v4"/></svg>Screen</button>
+    <button data-tab="controlsTab"><svg viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Controls</button>
+  </nav>
+</div>
+
+<!-- pairing / offline screen -->
+<div id="gate" class="hidden">
+  <span class="label">◢ WISP // PHONE</span>
+  <h1 id="gateTitle">Connect to Wisp</h1>
+  <p class="dim" id="gateText"></p>
+  <div id="pinForm" class="hidden">
+    <input id="pin" type="tel" inputmode="numeric" maxlength="7" class="pin" placeholder="••• •••">
+    <div class="row" style="margin-top:12px"><button class="btn primary grow" id="pairBtn">Pair</button></div>
+  </div>
+  <div class="row hidden" id="retryRow" style="margin-top:14px"><button class="btn grow" id="retryBtn">Try again</button></div>
+</div>
+<div id="toast"></div>
+
+<script>
+"use strict";
+// ---------------- language ----------------
+let ZH = document.documentElement.lang.startsWith("zh") || (localStorage.getItem("wisp_lang") === "zh");
+const ZH_TEXT = {
+  "Connecting": "连接中", "Ready": "就绪", "Listening": "正在听", "Thinking": "正在思考", "Speaking": "正在说话",
+  "Offline": "离线", "Ask Wisp…": "问 Wisp……", "Ask Wisp anything — it runs on your computer.": "随便问 Wisp——它在你的电脑上运行。",
+  "Chat": "对话", "Screen": "屏幕", "Controls": "控制", "Type on the computer…": "在电脑上输入……", "Type": "输入",
+  "Tap to click · hold for right-click": "点按=单击 · 长按=右键", "Speak replies on the computer": "在电脑上说出回答",
+  "Read replies aloud here": "在手机上朗读回答", "Mute Wisp": "让 Wisp 静音", "New chat": "新对话", "Focus 25m": "专注 25 分钟",
+  "Lock PC": "锁定电脑", "Previous": "上一首", "Play/Pause": "播放/暂停", "Next": "下一首", "Volume −": "音量 −",
+  "Volume +": "音量 +", "Mute PC": "电脑静音", "Unpair this phone": "取消配对这部手机", "Connect to Wisp": "连接 Wisp",
+  "Pair": "配对", "Try again": "重试", "Your computer is offline": "你的电脑离线了",
+  "Wisp couldn't be reached. Is the computer on and awake, with Wisp running?": "连接不上 Wisp。电脑是否开着、没有睡眠，Wisp 是否在运行？",
+  "On your computer: right-click Wisp's orb > Phone, then scan the QR code with this phone's camera.": "在电脑上：右键点击 Wisp 的光球 > 手机，然后用这部手机的相机扫描二维码。",
+  "Type the PIN shown on your computer (right-click the orb > Phone).": "输入电脑上显示的 PIN 码（右键点击光球 > 手机）。",
+  "Hold to talk": "按住说话", "Transcribing…": "正在识别……", "Voice needs the secure link: in Wisp > Phone, turn on “Use away from home” and scan the new QR code.": "语音需要安全连接：在 Wisp > 手机中打开“在外面也能用”，然后扫描新的二维码。",
+  "Microphone access was blocked": "麦克风权限被拒绝", "Screen view is turned off in Wisp's settings.": "Wisp 设置中已关闭屏幕查看。",
+  "Typed": "已输入", "Sent": "已发送", "Stopped": "已停止", "Cancel": "取消", "Run": "运行", "Unpair this phone?": "取消配对这部手机？",
+  "Lock your PC?": "锁定电脑？", "Focus session started": "专注时段已开始", "Paired!": "配对成功！", "Wrong PIN.": "PIN 码错误。",
+  "Didn't catch that": "没听清", "You": "你",
+};
+const T = s => (ZH && ZH_TEXT[s]) || s;
+function translatePage() {
+  document.querySelectorAll("nav button, .tile, .btn, #composer input, #typeBox, #screenHint, .card .grow, #hello, #stateText")
+    .forEach(el => {
+      for (const n of el.childNodes) if (n.nodeType === 3 && n.textContent.trim()) n.textContent = T(n.textContent.trim());
+      if (el.placeholder) el.placeholder = T(el.placeholder);
+    });
+}
+
+// ---------------- where Wisp is ----------------
+const SERVED_BY_WISP = !/github\.io$/.test(location.hostname) && location.protocol === "http:";
+let BASE = SERVED_BY_WISP ? "" : (localStorage.getItem("wisp_base") || "");
+let TOKEN = localStorage.getItem("wisp_token") || "";
+let TOPIC = localStorage.getItem("wisp_topic") || "";
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function toast(text, ms = 2200) {
+  const t = $("toast"); t.textContent = text; t.classList.add("show");
+  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), ms);
+}
+
+async function api(path, opts = {}) {
+  const headers = Object.assign({}, opts.headers || {});
+  if (TOKEN) headers["Authorization"] = "Bearer " + TOKEN;
+  if (opts.json !== undefined) { headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(opts.json); }
+  const res = await fetch(BASE + path, { method: opts.body ? "POST" : "GET", headers, body: opts.body, cache: "no-store",
+                                        signal: opts.signal });
+  if (res.status === 401) { showGate("pair"); throw new Error("not paired"); }
+  return res;
+}
+
+async function discover() {
+  // Away from home: the PC posts its current secure address to a private ntfy.sh channel.
+  if (SERVED_BY_WISP || !TOPIC) return false;
+  try {
+    const res = await fetch(`https://ntfy.sh/${TOPIC}/json?poll=1&since=12h`, { cache: "no-store" });
+    const lines = (await res.text()).trim().split("\n").filter(Boolean).map(l => JSON.parse(l));
+    for (const ev of lines.reverse()) {
+      try { const m = JSON.parse(ev.message); if (m.wisp) { BASE = m.wisp; localStorage.setItem("wisp_base", BASE); return true; } }
+      catch (e) {}
+    }
+  } catch (e) {}
+  return false;
+}
+
+// ---------------- pairing ----------------
+async function pairFromLink() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (!h.get("pair")) return false;
+  history.replaceState(null, "", location.pathname);   // don't leave the code in the address bar
+  if (h.get("t")) { TOPIC = h.get("t"); localStorage.setItem("wisp_topic", TOPIC); }
+  if (h.get("u")) { BASE = decodeURIComponent(h.get("u")); localStorage.setItem("wisp_base", BASE); }
+  else if (!SERVED_BY_WISP) await discover();   // find the PC's current address first
+  return await pair({ code: h.get("pair") });
+}
+
+async function pair(body) {
+  try {
+    const name = /iPhone/.test(navigator.userAgent) ? "iPhone" : /Android/.test(navigator.userAgent) ? "Android phone" : "Phone";
+    const res = await fetch(BASE + "/api/pair", { method: "POST", headers: { "Content-Type": "application/json" },
+                                                 body: JSON.stringify(Object.assign({ name }, body)) });
+    const data = await res.json();
+    if (!res.ok) { toast(T(data.error || "Wrong PIN.")); return false; }
+    TOKEN = data.token; localStorage.setItem("wisp_token", TOKEN);
+    toast(T("Paired!"));
+    return true;
+  } catch (e) { toast(String(e)); return false; }
+}
+
+function showGate(kind) {
+  const g = $("gate"); g.classList.remove("hidden");
+  $("pinForm").classList.toggle("hidden", !(kind === "pair" && SERVED_BY_WISP));
+  $("retryRow").classList.toggle("hidden", kind !== "offline");
+  if (kind === "pair") {
+    $("gateTitle").textContent = T("Connect to Wisp");
+    $("gateText").textContent = SERVED_BY_WISP ? T("Type the PIN shown on your computer (right-click the orb > Phone).")
+      : T("On your computer: right-click Wisp's orb > Phone, then scan the QR code with this phone's camera.");
+  } else {
+    $("gateTitle").textContent = T("Your computer is offline");
+    $("gateText").textContent = T("Wisp couldn't be reached. Is the computer on and awake, with Wisp running?");
+  }
+  setConn(false);
+}
+function hideGate() { $("gate").classList.add("hidden"); }
+$("pairBtn").onclick = async () => { if (await pair({ pin: $("pin").value.replace(/\D/g, "") })) { hideGate(); start(); } };
+$("retryBtn").onclick = () => { hideGate(); start(); };
+
+// ---------------- state + events ----------------
+let seq = 0, state = null, readAloud = localStorage.getItem("wisp_read") === "1", polling = false;
+function setConn(ok) { $("conn").classList.toggle("ok", ok); }
+function setStatus(s) {
+  const app = $("app"); app.className = "state-" + s;
+  $("stateText").textContent = T({ listening: "Listening", thinking: "Thinking", speaking: "Speaking", ready: "Ready" }[s] || "Ready");
+  $("stopBtn").classList.toggle("hidden", s === "ready");
+}
+
+async function refreshState() {
+  const res = await api("/api/state"); state = await res.json();
+  if (state.lang === "zh" && !ZH) { ZH = true; localStorage.setItem("wisp_lang", "zh"); translatePage(); }
+  setStatus(state.status); seq = Math.max(seq, 0);
+  setSwitch("speakPc", state.speak_on_pc); setSwitch("muteWisp", state.muted); setSwitch("readAloud", readAloud);
+  renderLists();
+  $("aboutText").textContent = `Wisp v${state.version || ""} · ${SERVED_BY_WISP ? "home Wi-Fi" : "secure link"}`;
+  $("screenOff").textContent = state.screen ? "" : T("Screen view is turned off in Wisp's settings.");
+  if (/Mac/.test(navigator.platform) || state.mac) $("winKey").textContent = "⌘";
+  return state;
+}
+
+async function poll() {
+  if (polling) return; polling = true;
+  let failures = 0;
+  while (true) {
+    try {
+      const res = await api(`/api/events?after=${seq}&wait=25`);
+      const data = await res.json();
+      setConn(true); failures = 0;
+      for (const ev of data.events) handle(ev);
+      seq = data.seq;
+    } catch (e) {
+      setConn(false); failures++;
+      if (String(e).includes("not paired")) break;
+      if (failures === 2 && !SERVED_BY_WISP) await discover();    // the PC may have restarted with a new address
+      if (failures >= 4) { showGate("offline"); break; }
+      await sleep(2000);
+    }
+  }
+  polling = false;
+}
+
+function addMsg(kind, text) {
+  const log = $("log");
+  if (kind === "step") {
+    const d = document.createElement("div"); d.className = "step"; d.textContent = "› " + text; log.appendChild(d);
+  } else if (kind === "note") {
+    const d = document.createElement("div"); d.className = "note"; d.textContent = text; log.appendChild(d);
+  } else {
+    const d = document.createElement("div"); d.className = "msg " + kind;
+    d.innerHTML = `<div class="who">${kind === "you" ? T("You").toUpperCase() : "WISP"}</div><div class="bubble"></div>`;
+    d.querySelector(".bubble").textContent = text; log.appendChild(d);
+  }
+  log.scrollTop = log.scrollHeight;
+}
+
+let lastSay = "";
+function handle(ev) {
+  const t = ev.text || "";
+  if (ev.kind === "status") setStatus(t);
+  else if (ev.kind === "user") addMsg("you", t);
+  else if (ev.kind === "tool") { if (!t.startsWith("took ")) addMsg("step", friendlyStep(t)); }
+  else if (ev.kind === "say") { lastSay = t; addMsg("wisp", t); speak(t); }
+  else if (ev.kind === "reply") { if (t.trim() && t.trim() !== lastSay.trim()) addMsg("wisp", t); }
+  else if (ev.kind === "alert") { addMsg("wisp", t); speak(t); }
+  else if (ev.kind === "error") addMsg("error", t);
+  else if (ev.kind === "info") addMsg("note", t);
+}
+// "mcp__windows-mcp__App-Tool  launch spotify" -> "Using an app: launch spotify"
+const STEP_NAMES = {
+  App: ["Using an app", "使用应用"], Click: ["Clicking", "点击"], Type: ["Typing", "输入"], Scroll: ["Scrolling", "滚动"],
+  Shortcut: ["Pressing keys", "按键"], State: ["Looking at the screen", "查看屏幕"], Screenshot: ["Looking at the screen", "查看屏幕"],
+  WebSearch: ["Searching the web", "搜索网络"], WebFetch: ["Reading a page", "阅读网页"], Bash: ["Running a command", "运行命令"],
+  PowerShell: ["Running a command", "运行命令"], Read: ["Reading a file", "读取文件"], Write: ["Writing a file", "写入文件"],
+  Edit: ["Editing a file", "编辑文件"], Glob: ["Finding files", "查找文件"], Grep: ["Searching files", "搜索文件"],
+};
+function friendlyStep(t) {
+  const [tool, ...rest] = t.split("  ");
+  const name = tool.replace(/^mcp__[\w-]+__/, "").replace(/-Tool$/, "");
+  const label = STEP_NAMES[name] ? STEP_NAMES[name][ZH ? 1 : 0] : name;
+  const detail = rest.join(" ").trim();
+  return detail ? `${label}: ${detail.slice(0, 80)}` : label;
+}
+function speak(text) {
+  if (!readAloud || !("speechSynthesis" in window)) return;
+  speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(text); if (ZH) u.lang = "zh-CN"; speechSynthesis.speak(u);
+}
+
+// ---------------- chat ----------------
+async function send() {
+  const box = $("say"); const text = box.value.trim(); if (!text) return;
+  box.value = ""; box.blur();
+  try { await api("/api/ask", { json: { text } }); } catch (e) { toast(String(e)); }
+}
+$("send").onclick = send;
+$("say").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+$("stopBtn").onclick = () => action("stop");
+
+// hold-to-talk: record here, the computer turns it into text
+let rec = null, chunks = [], recStart = 0;
+const canRecord = window.isSecureContext && navigator.mediaDevices && window.MediaRecorder;
+if (!canRecord) $("mic").classList.add("off");
+async function micDown(e) {
+  e.preventDefault();
+  if (!canRecord) { toast(T("Voice needs the secure link: in Wisp > Phone, turn on “Use away from home” and scan the new QR code."), 4500); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    const type = ["audio/webm;codecs=opus", "audio/mp4", "audio/webm"].find(t => MediaRecorder.isTypeSupported(t)) || "";
+    rec = new MediaRecorder(stream, type ? { mimeType: type } : {});
+    chunks = []; rec.ondataavailable = ev => ev.data.size && chunks.push(ev.data);
+    rec.onstop = () => { stream.getTracks().forEach(t => t.stop()); upload(new Blob(chunks, { type: rec.mimeType })); };
+    rec.start(); recStart = Date.now();
+    $("mic").classList.add("rec"); $("recHint").classList.remove("hidden");
+    if (navigator.vibrate) navigator.vibrate(15);
+  } catch (err) { toast(T("Microphone access was blocked")); }
+}
+function micUp(e) {
+  e.preventDefault();
+  if (!rec || rec.state !== "recording") return;
+  $("mic").classList.remove("rec"); $("recHint").classList.add("hidden");
+  if (Date.now() - recStart < 350) { rec.onstop = () => rec.stream.getTracks().forEach(t => t.stop()); rec.stop(); toast(T("Hold to talk")); return; }
+  rec.stop();
+}
+async function upload(blob) {
+  toast(T("Transcribing…"), 6000);
+  try {
+    const res = await api("/api/voice", { body: blob, headers: { "Content-Type": blob.type || "audio/webm" } });
+    const data = await res.json();
+    if (!data.text) toast(T("Didn't catch that")); else $("toast").classList.remove("show");
+  } catch (e) { toast(String(e)); }
+}
+const mic = $("mic");
+mic.addEventListener("pointerdown", micDown); mic.addEventListener("pointerup", micUp);
+mic.addEventListener("pointercancel", micUp); mic.addEventListener("pointerleave", micUp);
+mic.addEventListener("contextmenu", e => e.preventDefault());
+
+// ---------------- live screen ----------------
+let screenOn = false, screenBusy = false, lastUrl = null;
+async function screenLoop() {
+  while (screenOn) {
+    if (!screenBusy && document.visibilityState === "visible") {
+      screenBusy = true;
+      try {
+        const w = Math.min(1400, Math.round($("screenWrap").clientWidth * Math.min(2, devicePixelRatio || 1)));
+        const res = await api(`/api/screen?w=${w}`);
+        if (res.ok) {
+          const url = URL.createObjectURL(await res.blob());
+          $("screenImg").src = url; if (lastUrl) URL.revokeObjectURL(lastUrl); lastUrl = url;
+        }
+      } catch (e) {}
+      screenBusy = false;
+    }
+    await sleep(SERVED_BY_WISP ? 250 : 450);
+  }
+}
+let pressTimer = null, pressXY = null, dblNext = false;
+const wrap = $("screenWrap");
+function frac(e) { const r = $("screenImg").getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height]; }
+function ping(e) { const r = wrap.getBoundingClientRect(); const p = document.createElement("div"); p.className = "ping";
+  p.style.left = (e.clientX - r.left) + "px"; p.style.top = (e.clientY - r.top) + "px"; wrap.appendChild(p); setTimeout(() => p.remove(), 600); }
+wrap.addEventListener("pointerdown", e => {
+  pressXY = [e.clientX, e.clientY]; const xy = frac(e); const ev = e;
+  pressTimer = setTimeout(() => { pressTimer = null; ping(ev); input({ type: "click", x: xy[0], y: xy[1], button: "right" });
+                                 if (navigator.vibrate) navigator.vibrate(25); }, 550);
+});
+wrap.addEventListener("pointerup", e => {
+  if (!pressTimer) return; clearTimeout(pressTimer); pressTimer = null;
+  if (Math.hypot(e.clientX - pressXY[0], e.clientY - pressXY[1]) > 14) return;
+  const xy = frac(e); ping(e); input({ type: "click", x: xy[0], y: xy[1], double: dblNext }); dblNext = false; $("dbl").classList.remove("primary");
+});
+wrap.addEventListener("pointercancel", () => { clearTimeout(pressTimer); pressTimer = null; });
+async function input(cmd) {
+  try { const res = await api("/api/input", { json: cmd }); if (!res.ok) toast((await res.json()).error || "Couldn't"); }
+  catch (e) { toast(String(e)); }
+}
+document.querySelectorAll("[data-key]").forEach(b => b.onclick = () => input({ type: "key", key: b.dataset.key }));
+document.querySelectorAll("[data-scroll]").forEach(b => b.onclick = () => input({ type: "scroll", dy: +b.dataset.scroll }));
+$("dbl").onclick = () => { dblNext = !dblNext; $("dbl").classList.toggle("primary", dblNext); };
+function typeNow() { const t = $("typeBox").value; if (!t) return; $("typeBox").value = ""; input({ type: "type", text: t }); toast(T("Typed")); }
+$("typeSend").onclick = typeNow;
+$("typeBox").addEventListener("keydown", e => { if (e.key === "Enter") typeNow(); });
+
+// ---------------- controls ----------------
+async function action(name, value) {
+  try { const res = await api("/api/action", { json: { action: name, value } }); if (!res.ok) toast("Couldn't do that"); return res.ok; }
+  catch (e) { toast(String(e)); return false; }
+}
+document.querySelectorAll("[data-action]").forEach(b => b.onclick = () => action(b.dataset.action));
+$("lockBtn").onclick = () => { if (confirm(T("Lock your PC?"))) action("lock_pc"); };
+$("focusBtn").onclick = async () => { if (await action("focus_session", 25)) toast(T("Focus session started")); };
+function setSwitch(id, on) { $(id).classList.toggle("on", !!on); }
+$("speakPc").onclick = () => { const on = !$("speakPc").classList.contains("on"); setSwitch("speakPc", on); action("speak_on_pc", on); };
+$("muteWisp").onclick = () => { const on = !$("muteWisp").classList.contains("on"); setSwitch("muteWisp", on); action("mute", on); };
+$("readAloud").onclick = () => { readAloud = !readAloud; localStorage.setItem("wisp_read", readAloud ? "1" : "0"); setSwitch("readAloud", readAloud); };
+$("unpair").onclick = () => { if (confirm(T("Unpair this phone?"))) { localStorage.removeItem("wisp_token"); TOKEN = ""; showGate("pair"); } };
+
+function renderLists() {
+  const el = (html) => { const d = document.createElement("div"); d.innerHTML = html; return d.firstElementChild; };
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const timers = $("timers"); timers.innerHTML = "";
+  $("timersHead").classList.toggle("hidden", !state.timers.length);
+  for (const t of state.timers) {
+    const card = el(`<div class="card timer row"><div class="grow"><div class="left">${Math.ceil(t.left / 60)}m</div>
+      <div class="dim">${esc(t.label)} · ${esc(t.when)}</div></div><button class="btn">${T("Cancel")}</button></div>`);
+    card.querySelector("button").onclick = async () => { await action("cancel_timer", t.id); refreshState(); };
+    timers.appendChild(card);
+  }
+  const routines = $("routines"); routines.innerHTML = "";
+  $("routinesHead").classList.toggle("hidden", !state.routines.length);
+  for (const r of state.routines) {
+    const card = el(`<div class="card row"><div class="grow"><b>${esc(r.name)}</b><div class="dim" style="font-size:13px">${esc(r.says)}</div></div>
+      <button class="btn">${T("Run")}</button></div>`);
+    card.querySelector("button").onclick = () => action("routine", r.name);
+    routines.appendChild(card);
+  }
+  const jobs = $("jobs"); jobs.innerHTML = "";
+  $("jobsHead").classList.toggle("hidden", !state.jobs.length);
+  for (const j of state.jobs) jobs.appendChild(el(`<div class="card"><div class="label" style="color:${j.status === "done" ? "var(--green)" : j.status === "failed" ? "var(--red)" : "var(--amber)"}">${esc(j.status)}</div>
+    <div style="margin-top:6px">${esc(j.task)}</div>${j.say ? `<div class="dim" style="margin-top:6px">${esc(j.say)}</div>` : ""}</div>`));
+}
+
+// ---------------- tabs ----------------
+document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("nav button").forEach(x => x.classList.toggle("on", x === b));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("hidden", t.id !== b.dataset.tab));
+  const wantScreen = b.dataset.tab === "screenTab";
+  if (wantScreen && !screenOn) { screenOn = true; screenLoop(); } else if (!wantScreen) screenOn = false;
+  if (b.dataset.tab === "controlsTab") refreshState().catch(() => {});
+});
+
+// ---------------- start ----------------
+async function start() {
+  translatePage();
+  if (location.hash.includes("pair=")) await pairFromLink();
+  if (!TOKEN) return showGate("pair");
+  if (!SERVED_BY_WISP && !BASE) await discover();
+  try { await refreshState(); }
+  catch (e) {
+    if (String(e).includes("not paired")) return;
+    if (!SERVED_BY_WISP && await discover()) { try { await refreshState(); } catch (e2) { return showGate("offline"); } }
+    else return showGate("offline");
+  }
+  hideGate(); setConn(true);
+  try { const res = await api("/api/events?after=0&wait=0"); const data = await res.json();
+        for (const ev of data.events.slice(-30)) if (ev.kind !== "status") handle(ev); seq = data.seq; } catch (e) {}
+  poll();
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && TOKEN && !polling) start(); });
+start();
+</script>
+</body>
+</html>
