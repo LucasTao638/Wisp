@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.5
+## 0.2.0
 - A whole new look: a holographic design across every window - near-black glass, thin glowing lines, cut corners and corner brackets
   - The orb is now a precise holographic lens instead of a glowing blob: live audio bars while you talk, a radar sweep while it thinks, pulse rings while it speaks. Its faint parts stay visible on any wallpaper
   - The side widget shows a live waveform while listening, a scanning bar while thinking and an equaliser while speaking, with a Stop button

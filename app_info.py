@@ -1,7 +1,7 @@
 """Everything about this copy of Wisp that the maintainer sets when publishing a release."""
 
 APP_NAME = "Wisp"
-VERSION = "0.1.5"
+VERSION = "0.2.0"
 
 # Where updates come from: "<github-username>/<repo-name>". Change this before your first release.
 GITHUB_REPO = "LucasTao638/Wisp"
