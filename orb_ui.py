@@ -146,6 +146,10 @@ class OrbApp:
         self.phone_window = None
         if remote.is_enabled():
             self.remote.start()
+            if remote.settings().get("away"):
+                self.remote.start_away()
+        import remote_input
+        remote_input.SCREEN_POINTS = (self.root.winfo_screenwidth(), self.root.winfo_screenheight())
         self.update_info = None
         self.updater = updates.UpdateChecker(lambda info: self.events.put(("ui_update", info)))
         self.updater.start()
@@ -702,72 +706,11 @@ class OrbApp:
         text.see("end")
 
     def show_phone_window(self):
-        """Pairing window: shows the address to open on your phone and a 6-digit PIN."""
-        if self.phone_window and self.phone_window.winfo_exists():
-            self.phone_window.destroy()
-        remote.set_enabled(True)
-        if not self.remote.start():
-            return
-        pin = self.remote.new_pin()
-        s = self.s
-        win = self.phone_window = tk.Toplevel(self.root, bg=PANEL)
-        win.title(L("Wisp - connect phone", "Wisp - 连接手机"))
-        win.attributes("-topmost", True)
-        win.geometry(f"{int(460 * s)}x{int(500 * s)}")
-        accent = self.accent
-        title = tk.Label(win, text=L("C O N N E C T   P H O N E", "连 接 手 机"), bg=PANEL, fg=accent, font=self.f_title)
-        title.pack(pady=(int(22 * s), int(6 * s)))
-        tk.Label(win, text=L("On your phone (same Wi-Fi), open this in the browser:", "在手机上（同一 Wi-Fi）用浏览器打开："), bg=PANEL, fg=DIM,
-                 font=self.f_small).pack()
-        addresses = remote.local_addresses(self.remote.port)
-        for i, addr in enumerate(addresses[:3]):
-            tk.Label(win, text=addr, bg=PANEL, fg=TEXT if i == 0 else DIM,
-                     font=(self.f_title.actual("family"), 16 if i == 0 else 11, "bold")).pack(pady=(int(8 * s), 0))
-        tk.Label(win, text=L("then type this PIN:", "然后输入这个 PIN 码："), bg=PANEL, fg=DIM, font=self.f_small).pack(pady=(int(18 * s), 0))
-        tk.Label(win, text=f"{pin[:3]} {pin[3:]}", bg=PANEL, fg=accent,
-                 font=(self.f_title.actual("family"), 40, "bold")).pack()
-        expiry = tk.Label(win, text="", bg=PANEL, fg=DIM, font=self.f_small)
-        expiry.pack()
-        devices = tk.Label(win, text="", bg=PANEL, fg=DIM, font=self.f_small)
-        devices.pack(pady=(int(14 * s), 0))
-        tip = L("Tip: in your phone's browser, choose \u201cAdd to Home Screen\u201d to use it like an app.\n"
-                "Away from home? Install Tailscale (free) on both, then use the 100.x address.",
-                "提示：在手机浏览器中选择“添加到主屏幕”，就能像应用一样使用。\n"
-                "不在家？在电脑和手机上都安装 Tailscale（免费），然后使用 100.x 开头的地址。")
-        tk.Label(win, text=tip, bg=PANEL, fg=DIM, font=self.f_small, justify="center",
-                 wraplength=int(410 * s)).pack(pady=(int(10 * s), 0))
-        row = tk.Frame(win, bg=PANEL)
-        row.pack(pady=int(16 * s))
-
-        def forget():
-            remote.forget_all()
-            update()
-
-        def turn_off():
-            remote.set_enabled(False)
-            self.remote.stop()
-            win.destroy()
-            self.caption = L("Phone remote is off.", "手机遥控已关闭。")
-        ui_kit.FlatButton(row, L("Forget all phones", "忘记所有手机"), forget, font=self.f_small).pack(side="left", padx=4)
-        ui_kit.FlatButton(row, L("Turn off phone remote", "关闭手机遥控"), turn_off, font=self.f_small).pack(side="left", padx=4)
-        ui_kit.FlatButton(row, L("Done", "完成"), win.destroy, bg=accent, fg="#031018", hover=accent,
-                              font=self.f_small).pack(side="left", padx=4)
-
-        def update():
-            if not win.winfo_exists():
-                return
-            left = self.remote.pin_expires - time.time()
-            if self.remote.pin and left > 0:
-                expiry.config(text=L("PIN works for ", "PIN 码剩余有效时间 ") + f"{int(left // 60)}:{int(left % 60):02d}", fg=DIM)
-            else:
-                expiry.config(text=L("PIN used or expired - reopen this window for a new one", "PIN 码已使用或已过期，请重新打开此窗口获取新的"), fg=AMBER_TEXT)
-            n = remote.paired_count()
-            devices.config(text=(L(f"{n} phone{'s' if n != 1 else ''} paired", f"已配对 {n} 部手机") if n
-                                else L("No phones paired yet", "尚未配对手机")))
-            win.after(1000, update)
-        update()
-        if not addresses:
-            expiry.config(text=L("Couldn't find this computer's network address - is it connected to Wi-Fi?", "找不到这台电脑的网络地址，是否已连接 Wi-Fi？"))
+        """The Phone window: QR pairing, away from home, notifications, Android control."""
+        if self.phone_window and self.phone_window.win.winfo_exists():
+            self.phone_window.win.destroy()
+        import phone_window
+        self.phone_window = phone_window.PhoneWindow(self)
 
     def show_routines(self):
         """Your routines in plain English, with Run / Delete. New ones: just tell Wisp "when I say X, do Y"."""

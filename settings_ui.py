@@ -298,6 +298,23 @@ class SettingsWindow:
         r = self.row(L("Full HUD shortcut", "全屏界面快捷键"))
         self.text(r, "hud_key", "ctrl+shift+j", width=18, restart=True)
 
+        self.section(L("Phone", "手机"))
+        r = self.row(L("Phone app, notifications, Android", "手机应用、通知、安卓"),
+                     L("Pair your phone with a QR code, use it away from home, get notifications on it, "
+                       "and let Wisp control an Android phone.",
+                       "用二维码配对手机，在外面也能用，接收通知，还能让 Wisp 控制安卓手机。"))
+        self.button(r, L("Open…", "打开……"), lambda: self.app.show_phone_window()).pack()
+        r = self.row(L("Phone can see & control the screen", "手机可以查看和控制屏幕"),
+                     L("The live screen view in the phone app.", "手机应用中的实时屏幕。"))
+        self.switch(r, "phone_screen", True)
+        r = self.row(L("Say something when a task takes a while", "任务较久时说一声"),
+                     L("A short “Give me a moment” - only for longer tasks, and not more than every few minutes.",
+                       "简短的“稍等一下”——只在任务较久时说，而且几分钟最多一次。"))
+        self.switch(r, "long_task_ack", True)
+        r = self.row(L("Answer as soon as I've clearly finished", "我说完就立刻回答"),
+                     L("After a short pause, if what you said is a complete sentence.", "短暂停顿后，如果你说的是完整的一句话。"))
+        self.switch(r, "quick_finish", True, restart=True)
+
         self.section(L("System", "系统"))
         if sys.platform in ("win32", "darwin"):
             r = self.row(L(f"Start {APP_NAME} when I log in", f"登录时自动启动 {APP_NAME}"), L("Starts hidden.", "启动后隐藏。"))
@@ -463,7 +480,7 @@ class SettingsWindow:
         live = {k: v for k, v in self.changes.items()
                 if k in ("user_name", "follow_up_listening", "full_hud", "hud_dim", "share_usage_stats", "talk_view",
                          "talking_interrupts", "widget_hide_seconds", "conversation_mode", "conversation_seconds",
-                         "headphones_mode")}
+                         "headphones_mode", "phone_screen", "long_task_ack")}
         self.app.cfg.update(live)  # these apply straight away
         if self.needs_restart:
             self.status.config(text=L("Saved. Some changes need a restart.", "已保存。部分更改需要重启。"), fg=self.accent)

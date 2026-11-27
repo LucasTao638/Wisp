@@ -36,10 +36,9 @@ def t(name, /, **kw):
 
 # Per-language defaults applied when someone switches language
 LANGUAGE_DEFAULTS = {
-    "en": {"whisper_model": "base.en", "edge_voice": "en-GB-RyanNeural", "mac_voice": "Daniel", "windows_voice": "",
-           "thinking_acks": ["One moment.", "Right away.", "On it.", "Just a moment."]},
+    "en": {"whisper_model": "base.en", "edge_voice": "en-GB-RyanNeural", "mac_voice": "Daniel", "windows_voice": ""},
     "zh": {"whisper_model": "small", "edge_voice": "zh-CN-YunxiNeural", "mac_voice": "Tingting",
-           "windows_voice": "Microsoft Huihui Desktop", "thinking_acks": ["稍等。", "马上。", "好的，这就去办。", "请稍候。"]},
+           "windows_voice": "Microsoft Huihui Desktop"},
 }
 
 STRINGS = {
@@ -122,7 +121,7 @@ STRINGS = {
     "menu_settings": {"en": "Settings", "zh": "设置"},
     "menu_hud": {"en": "Open full HUD", "zh": "打开全屏界面"},
     "menu_conversation": {"en": "Show conversation", "zh": "查看对话"},
-    "menu_phone": {"en": "Connect phone", "zh": "连接手机"},
+    "menu_phone": {"en": "Phone", "zh": "手机"},
     "menu_routines": {"en": "Routines", "zh": "例程"},
     "menu_feedback": {"en": "Send feedback", "zh": "发送反馈"},
     "menu_jobs": {"en": "Background jobs", "zh": "后台任务"},

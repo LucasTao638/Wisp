@@ -35,7 +35,8 @@ def load_config():
     return json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
 
 
-DEFAULT_ACKS = ["One sec.", "On it.", "Let me have a look.", "Hmm, let me check."]
+# Said (rarely) when a task is clearly taking a while - see _schedule_ack.
+DEFAULT_ACKS = ["Give me a moment.", "This'll take a few seconds.", "Just a moment."]
 t = i18n.t
 L = i18n.L
 
@@ -76,6 +77,7 @@ class Assistant:
         self.pending_offer = None
         self._stop_gen = 0            # goes up every time you interrupt, so a stopped request stays quiet
         self.in_conversation = False  # you're talking with Wisp: it keeps listening after each reply
+        self._timing = {}
         self._following_up = False    # the mic is open for your reply (no wake phrase needed)
 
     def emit(self, kind, text):
@@ -305,9 +307,21 @@ class Assistant:
                     self._follow_up()
                 elif self.in_conversation:
                     self._follow_up(conversation=True)
-            self.speaker.speak(text, on_done=done)
+            self.speaker.speak(text, on_done=done, on_start=self._log_timing)
         else:
             self.emit("status", self._idle_status())
+
+    def _log_timing(self):
+        """One line per spoken request in wisp.log, so slow steps are easy to spot:
+        timing: speech-to-text 0.31s | Claude's first words 1.84s | voice starts 0.52s | total 2.67s"""
+        tm, self._timing = getattr(self, "_timing", {}), {}
+        if "heard" not in tm or "text" not in tm:
+            return
+        now = time.time()
+        parts = [f"speech-to-text {tm['text'] - tm['heard']:.2f}s"]
+        if "reply" in tm:
+            parts += [f"Claude's first words {tm['reply'] - tm['text']:.2f}s", f"voice starts {now - tm['reply']:.2f}s"]
+        print("timing: " + " | ".join(parts) + f" | total {now - tm['heard']:.2f}s")
 
     def say_now(self, text):
         """Say something and wait until it's been said (used by routines)."""
@@ -520,13 +534,19 @@ class Assistant:
 
         def on_event(kind, detail):
             if kind == "tool":
+                working.set()   # Claude is doing real work (searching, using an app...), not just answering
                 self.emit("tool", detail)
             elif kind == "say" and gen == self._stop_gen:
+                self._timing.setdefault("reply", time.time())
                 # The spoken line arrived while Claude is still writing - say it right away.
                 spoken_early.append(detail)
                 self._say(detail)
 
-        self._schedule_ack(spoken_early, gen)
+        working = threading.Event()
+        self._schedule_ack(spoken_early, gen, working)
+        if self.source == "phone":
+            # the user is on their phone (maybe away from this computer): replies are read there
+            text = "[Sent from the Wisp phone app - the user may not be at the computer.]\n" + text
         try:
             result = self.session.ask(text, on_event=on_event)
         finally:
@@ -557,16 +577,23 @@ class Assistant:
             return  # already said it
         self._say(spoken)
 
-    def _schedule_ack(self, spoken_early, gen):
-        """If Claude is taking a while, say a short 'One moment' so you know it heard you."""
-        delay = self.cfg.get("thinking_ack_after", 2.0)
-        phrases = self.cfg.get("thinking_acks", DEFAULT_ACKS)
-        if not delay or not phrases or self.muted or not self._speak_here():
+    def _schedule_ack(self, spoken_early, gen, working):
+        """Only when a task is clearly taking a while - Claude is doing work and nothing's been said for a few
+        seconds - say a short "Give me a moment" so you know it's on it. Rarely: at most once every few
+        minutes, never mid-conversation, and never for a plain question (that's answered quickly anyway)."""
+        if not self.cfg.get("long_task_ack", True):
+            return
+        delay = float(self.cfg.get("long_task_ack_after", 6))
+        phrases = self.cfg.get("long_task_acks") or (["稍等一下。", "需要几秒钟。"] if i18n.is_zh() else DEFAULT_ACKS)
+        if self.muted or not self._speak_here() or self.in_conversation:
+            return
+        if time.time() - getattr(self, "_last_ack", 0) < 180:
             return
 
         def ack():
-            if self.busy.is_set() and gen == self._stop_gen and not spoken_early and not self.speaker.speaking \
-                    and not self.is_listening:
+            if self.busy.is_set() and working.is_set() and gen == self._stop_gen and not spoken_early \
+                    and not self.speaker.speaking and not self.is_listening:
+                self._last_ack = time.time()
                 self.speaker.speak(random.choice(phrases))
         _later(delay, ack)
 
@@ -607,7 +634,7 @@ class Assistant:
             return
         self.voice_ready = True
         self.emit("voice", "on")
-        self.speaker.precache(self.cfg.get("thinking_acks", DEFAULT_ACKS) + [t("yes"), t("didnt_catch")])
+        self.speaker.precache((self.cfg.get("long_task_acks") or DEFAULT_ACKS) + [t("yes"), t("didnt_catch")])
         try:
             import hotkeys
             talk_key = self.cfg.get("talk_key", "f9")
@@ -634,6 +661,7 @@ class Assistant:
                 and self.wake_allowed and not self.recording,
             on_barge_in=self._on_barge_in,
         )
+        listener.quick_finish = self.cfg.get("quick_finish", True)
         try:
             listener.load()
             listener.start()
@@ -692,6 +720,13 @@ class Assistant:
 
         self._transcribe_and_submit(audio)
 
+    def transcribe_audio(self, audio):
+        """Speech-to-text for audio from elsewhere (the phone's mic button). Loads the model if needed."""
+        if self._transcriber is None:
+            from voice import Transcriber
+            self._transcriber = Transcriber(self.cfg["whisper_model"], i18n.LANG)
+        return self._transcriber.transcribe(audio).strip()
+
     def _check_finished(self, audio):
         """Called when you pause: have you actually finished? (runs on the listening thread)"""
         from voice import sounds_unfinished, strip_wake_words
@@ -705,6 +740,7 @@ class Assistant:
 
     def _transcribe_and_submit(self, audio, wake=False, text=None):
         following_up, self._following_up = self._following_up, False   # was this a reply to a follow-up?
+        self._timing = {"heard": time.time()}   # for the timing line in wisp.log
 
         def transcribe():
             said = text if text is not None else self._transcriber.transcribe(audio)
@@ -714,6 +750,7 @@ class Assistant:
             if following_up and self.is_phantom(said):
                 said = ""   # speech-to-text "heard" something in near-silence: ignore it
             if said:
+                self._timing["text"] = time.time()
                 self.submit(said, spoken=True)
             elif following_up:
                 self.in_conversation = False   # nothing real was said: the conversation's over, quietly

@@ -8,8 +8,13 @@ Security:
   - The PIN changes every time you open the pairing window, expires after 10 minutes,
     and is replaced after 5 wrong guesses.
   - "Forget all phones" in the pairing window unpairs everything.
-  - It's plain HTTP on your home network. To use it away from home, use Tailscale (free, encrypted)
-    instead of opening ports on your router.
+  - It's plain HTTP on your home network. Away from home it goes through an encrypted Cloudflare link
+    (see tunnel.py) - no ports opened on your router. Or use Tailscale if you prefer.
+  - You can also pair by scanning a QR code (a one-time code that expires after 10 minutes).
+  - Too many requests with a wrong token from one place get that place blocked for a while.
+
+The phone app is one page (remote_page.html). On your Wi-Fi it's served from here; away from home it's
+served from the project's GitHub Pages site and talks to this PC through the secure link.
 """
 import hashlib
 import hmac
@@ -51,6 +56,27 @@ def _save_devices(data):
 
 def _hash(token):
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def settings():
+    """Phone settings + the private channel names (made once, kept in phone.json)."""
+    data = _load_devices()
+    changed = False
+    if not data.get("topic"):
+        data["topic"] = "wisp-" + secrets.token_hex(12)       # where the PC posts its current address
+        changed = True
+    if not data.get("notify_topic"):
+        data["notify_topic"] = "wisp-n-" + secrets.token_hex(12)   # notifications sent to your phone
+        changed = True
+    if changed:
+        _save_devices(data)
+    return data
+
+
+def set_option(key, value):
+    data = settings()
+    data[key] = value
+    _save_devices(data)
 
 
 def is_enabled():
@@ -96,6 +122,43 @@ def local_addresses(port):
 MEDIA_KEYS = sysplat.MEDIA_ACTIONS  # play_pause, next, previous, volume_up, volume_down, mute_pc
 
 
+_screen_lock = threading.Lock()
+_screen_cache = (0.0, 0, None)
+
+
+def screen_jpeg(width=720, quality=55):
+    """The main screen, small and fast, for the live view (shared between quick repeated requests)."""
+    global _screen_cache
+    from PIL import ImageGrab
+    with _screen_lock:
+        at, w, data = _screen_cache
+        if data is not None and w == width and time.time() - at < 0.25:
+            return data
+        img = ImageGrab.grab()   # main screen
+        if img.width > width:
+            img = img.resize((width, int(img.height * width / img.width)))
+        buf = io.BytesIO()
+        img.convert("RGB").save(buf, "JPEG", quality=quality)
+        _screen_cache = (time.time(), width, buf.getvalue())
+        return _screen_cache[2]
+
+
+def decode_audio(data):
+    """Audio recorded on the phone (webm/opus or mp4/aac) -> 16 kHz mono float32 for speech-to-text."""
+    import av
+    import numpy as np
+    out = []
+    with av.open(io.BytesIO(data)) as container:
+        stream = container.streams.audio[0]
+        resampler = av.AudioResampler(format="flt", layout="mono", rate=16000)
+        for frame in container.decode(stream):
+            for f in resampler.resample(frame):
+                out.append(f.to_ndarray().reshape(-1))
+        for f in resampler.resample(None):
+            out.append(f.to_ndarray().reshape(-1))
+    return np.concatenate(out).astype("float32") if out else np.zeros(0, dtype="float32")
+
+
 def screenshot_jpeg(max_width=1600):
     from PIL import Image
     tmp = Path(tempfile.gettempdir()) / "wisp_phone_shot.png"
@@ -119,6 +182,9 @@ class PhoneRemote:
         self.pin = None
         self.pin_expires = 0.0
         self.pin_tries = 0
+        self.codes = {}           # one-time QR pairing codes -> expiry time
+        self.fails = {}           # client -> (count, first failure time): blocks token guessing
+        self.tunnel = None
         assistant.add_listener(self._on_event)
 
     # ---------- lifecycle ----------
@@ -140,10 +206,29 @@ class PhoneRemote:
         return True
 
     def stop(self):
+        self.stop_away()
         if self.server:
             self.server.shutdown()
             self.server.server_close()
             self.server = None
+
+    # ---------- away from home ----------
+    def start_away(self, on_status=None):
+        import tunnel
+        if not self.start():
+            return False
+        if self.tunnel is None:
+            self.tunnel = tunnel.Tunnel(self.port, settings()["topic"], on_status)
+        self.tunnel.start()
+        return True
+
+    def stop_away(self):
+        if self.tunnel:
+            self.tunnel.stop()
+
+    @property
+    def away_url(self):
+        return self.tunnel.url if self.tunnel else None
 
     @property
     def running(self):
@@ -156,7 +241,30 @@ class PhoneRemote:
         self.pin_tries = 0
         return self.pin
 
-    def pair(self, pin, name):
+    def new_pair_code(self):
+        """A one-time code for the QR code (much longer than a PIN, so it's safe to use over the internet)."""
+        code = secrets.token_urlsafe(18)
+        now = time.time()
+        self.codes = {c: t for c, t in self.codes.items() if t > now}
+        self.codes[code] = now + 600
+        return code
+
+    def pair_link(self, away=False):
+        """What the QR code opens on the phone."""
+        from app_info import PHONE_APP_URL
+        code = self.new_pair_code()
+        if away and self.away_url:
+            from urllib.parse import quote
+            return f"{PHONE_APP_URL}#pair={code}&t={settings()['topic']}&u={quote(self.away_url, safe='')}"
+        lan = local_addresses(self.port)
+        return f"{lan[0] if lan else 'http://localhost:%d' % self.port}/#pair={code}"
+
+    def pair(self, pin, name, code=None):
+        if code:
+            expires = self.codes.pop(str(code), 0)
+            if time.time() > expires:
+                return None, "That QR code has expired. Show a new one on your PC."
+            return self._issue_token(name)
         if not self.pin or time.time() > self.pin_expires:
             return None, "No pairing code is active. On your PC: right-click the orb > Connect phone."
         self.pin_tries += 1
@@ -166,21 +274,31 @@ class PhoneRemote:
                 self.a.emit("info", "Too many wrong phone PINs - a new PIN has been made.")
                 return None, "Too many wrong tries. Check the new PIN on your PC."
             return None, "Wrong PIN."
+        self.pin = None  # one PIN, one phone
+        return self._issue_token(name)
+
+    def _issue_token(self, name):
         token = secrets.token_urlsafe(32)
         data = _load_devices()
         data.setdefault("devices", []).append({"name": (name or "Phone")[:40], "hash": _hash(token),
                                                "paired": time.strftime("%Y-%m-%d %H:%M")})
         _save_devices(data)
-        self.pin = None  # one PIN, one phone
         from i18n import L
         self.a.emit("info", L(f"Phone paired: {name or 'Phone'}.", f"手机已配对：{name or '手机'}。"))
         return token, None
 
-    def check_token(self, token):
-        if not token:
+    def check_token(self, token, client="?"):
+        """Is this a paired phone? Too many wrong tokens from one client blocks it for 15 minutes."""
+        count, first = self.fails.get(client, (0, 0.0))
+        if count >= 20 and time.time() - first < 900:
             return False
-        h = _hash(token)
-        return any(hmac.compare_digest(h, d["hash"]) for d in _load_devices().get("devices", []))
+        h = _hash(token or "")
+        ok = bool(token) and any(hmac.compare_digest(h, d["hash"]) for d in _load_devices().get("devices", []))
+        if not ok:
+            if time.time() - first > 900:
+                count, first = 0, time.time()
+            self.fails[client] = (count + 1, first)
+        return ok
 
     # ---------- events for the phone ----------
     def _on_event(self, kind, text):
@@ -214,7 +332,9 @@ class PhoneRemote:
         jobs = [{"id": j["id"], "task": j["task"], "status": j["status"], "say": j.get("say", ""),
                  "result": (j.get("result") or j.get("error") or "")[:4000]} for j in background.list_jobs(limit=8)]
         import routines
-        return {"status": status, "muted": a.muted, "timers": items, "jobs": jobs,
+        import i18n
+        return {"status": status, "muted": a.muted, "timers": items, "jobs": jobs, "lang": i18n.LANG,
+                "screen": a.cfg.get("phone_screen", True), "version": __import__("app_info").VERSION,
                 "session": focus.session_text(), "focus_today": int(focus.focus_minutes_today()),
                 "routines": [{"name": n, "says": routines.describe(r)} for n, r in routines.load().items()][:20], "speak_on_pc": a.cfg.get("phone_replies_on_pc", False),
                 "name": a.cfg.get("user_name", ""), "accent": a.cfg.get("accent_colour", "#38d6ff"),
@@ -271,12 +391,39 @@ class RemoteHandler(BaseHTTPRequestHandler):
         elif isinstance(body, str):
             body = body.encode()
         self.send_response(code)
+        self._cors()
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(body)
+
+    def _cors(self):
+        """The phone app on GitHub Pages (away from home) is a different website, so allow it explicitly."""
+        from app_info import PHONE_APP_URL
+        origin = self.headers.get("Origin") or ""
+        allowed = "/".join(PHONE_APP_URL.split("/")[:3])
+        if origin and origin == allowed:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Max-Age", "600")
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _via_tunnel(self):
+        """Came in through the away-from-home link (cloudflared connects from this computer)."""
+        return self.client_address[0] in ("127.0.0.1", "::1") and bool(self.headers.get("CF-Connecting-IP"))
+
+    def _client(self):
+        # only trust Cloudflare's "real address" header when the request really came through the tunnel
+        return self.headers.get("CF-Connecting-IP") if self._via_tunnel() else self.client_address[0]
 
     def _body(self):
         length = int(self.headers.get("Content-Length") or 0)
@@ -289,7 +436,7 @@ class RemoteHandler(BaseHTTPRequestHandler):
 
     def _authed(self):
         token = (self.headers.get("Authorization") or "").removeprefix("Bearer ").strip()
-        if self.remote.check_token(token):
+        if self.remote.check_token(token, self._client()):
             return True
         self._send(401, {"error": "not paired"})
         return False
@@ -307,7 +454,7 @@ class RemoteHandler(BaseHTTPRequestHandler):
             except OSError:
                 return self._send(500, "remote_page.html is missing", "text/plain")
         if url.path == "/manifest.json":
-            return self._send(200, {"name": "Wisp", "short_name": "Wisp", "start_url": "/",
+            return self._send(200, {"name": "Wisp", "short_name": "Wisp", "start_url": "/", "scope": "/",
                                     "display": "standalone", "background_color": "#05080c",
                                     "theme_color": "#05080c",
                                     "icons": [{"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"}]})
@@ -327,6 +474,15 @@ class RemoteHandler(BaseHTTPRequestHandler):
             wait = min(25.0, float(q.get("wait", ["25"])[0]))
             events, seq = r.events_after(after, wait)
             return self._send(200, {"events": events, "seq": seq})
+        if url.path == "/api/screen":
+            if not r.a.cfg.get("phone_screen", True):
+                return self._send(403, {"error": "Screen view is turned off in Wisp's settings."})
+            q = parse_qs(url.query)
+            width = max(240, min(1600, int(q.get("w", ["720"])[0])))
+            try:
+                return self._send(200, screen_jpeg(width), "image/jpeg")
+            except Exception as exc:
+                return self._send(500, {"error": f"Couldn't see the screen: {exc}"})
         if url.path == "/api/screenshot":
             try:
                 return self._send(200, screenshot_jpeg(), "image/jpeg")
@@ -337,11 +493,16 @@ class RemoteHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         url = urlparse(self.path)
         r = self.remote
+        if url.path == "/api/voice":   # raw audio, not JSON
+            return self._voice()
         body = self._body()
         if body is None:
             return self._send(400, {"error": "bad request"})
         if url.path == "/api/pair":
-            token, err = r.pair(body.get("pin", ""), body.get("name", ""))
+            if self._via_tunnel() and not body.get("code"):
+                # over the internet only the long one-time QR code is accepted, never the short PIN
+                return self._send(403, {"error": "Scan the QR code in Wisp > Phone to pair."})
+            token, err = r.pair(body.get("pin", ""), body.get("name", ""), code=body.get("code"))
             return self._send(200 if token else 403, {"token": token} if token else {"error": err})
         if not self._authed():
             return
@@ -359,7 +520,34 @@ class RemoteHandler(BaseHTTPRequestHandler):
                 return self._send(400, {"error": "empty"})
             result = feedback.send(str(body.get("kind", "idea")), message, body.get("rating"), str(body.get("email", "")))
             return self._send(200, {"result": result})
+        if url.path == "/api/input":
+            if not r.a.cfg.get("phone_screen", True):
+                return self._send(403, {"error": "Screen control is turned off in Wisp's settings."})
+            import remote_input
+            try:
+                ok = remote_input.handle(body)
+            except Exception as exc:
+                return self._send(500, {"error": f"Couldn't control the mouse/keyboard: {exc}"})
+            return self._send(200 if ok else 400, {"ok": ok})
         if url.path == "/api/action":
             ok = r.action(str(body.get("action", "")), body.get("value"))
             return self._send(200 if ok else 400, {"ok": ok})
         self._send(404, {"error": "not found"})
+
+    def _voice(self):
+        """Hold-to-talk on the phone: the recording is turned into text here, then run like a typed request."""
+        if not self._authed():
+            return
+        length = int(self.headers.get("Content-Length") or 0)
+        if not 0 < length <= 15_000_000:
+            return self._send(400, {"error": "recording missing or too long"})
+        data = self.rfile.read(length)
+        try:
+            text = self.remote.a.transcribe_audio(decode_audio(data))
+        except Exception as exc:
+            return self._send(500, {"error": f"Couldn't understand the recording: {exc}"})
+        if text:
+            import telemetry
+            telemetry.feature("phone_voice")
+            self.remote.a.submit(text, source="phone")
+        return self._send(200, {"text": text})

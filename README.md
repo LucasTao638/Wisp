@@ -21,19 +21,22 @@ Talk to it (or type), and Wisp searches the web properly, opens and controls app
 **You need:** Windows 10/11 or macOS 12+, an internet connection, and an Anthropic account to pay for Claude ([get an API key](https://console.anthropic.com/settings/keys)). A microphone is optional. **You don't need to install Python, Git or anything else first**: the installer gets everything, and it doesn't need admin rights.
 
 ### Windows 10 / 11
-1. Download **`wisp-v…-windows.zip`** from [Releases](../../releases) and unzip it (right-click > **Extract All**).
-2. Double-click **`setup.bat`**. If Windows says *"Windows protected your PC"*, click **More info > Run anyway** (Wisp is free and isn't code-signed).
-3. Press **Enter** to install to the suggested folder (or type **C** to choose your own).
+Open **PowerShell** (press the Windows key, type *PowerShell*, press Enter), paste this and press Enter:
 
-Or, in **PowerShell**: `irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex`
+```
+irm https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.ps1 | iex
+```
+
+Then press **Enter** to install to the suggested folder (or type **C** to choose your own).
 
 ### macOS 12 or newer (beta)
-1. Download **`wisp-v…-mac.zip`** from [Releases](../../releases) and double-click it to unzip.
-2. Double-click **`Install Wisp.command`**. If macOS blocks it, right-click it > **Open** > **Open**.
-3. Press **Enter** to install to the suggested folder (or type **C** to choose your own).
+Open **Terminal** (press Cmd+Space, type *Terminal*, press Enter), paste this and press Enter:
 
-Or, in **Terminal**: `curl -fsSL https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.sh | bash`
+```
+curl -fsSL https://raw.githubusercontent.com/LucasTao638/Wisp/main/install.sh | bash
+```
 
+Then press **Enter** to install to the suggested folder (or type **C** to choose your own).
 Wisp appears in your **Applications** folder (the one in your home folder). macOS asks to allow the **Microphone**, **Accessibility / Input Monitoring** (for the talk key) and **Automation** (when Wisp controls an app): allow them. Missed one? The setup screen has buttons that open each setting.
 
 ### What the installer does for you
@@ -44,6 +47,16 @@ Wisp appears in your **Applications** folder (the one in your home folder). macO
 
 **Connecting Claude takes no typing:** the setup screen's **Connect Claude** page gives you two options with step-by-step instructions: paste an API key, or sign in through Claude Code's own window. It checks Claude Code is installed (if not: **Install it for me**) and tests the connection for you. You can change this later in **Settings > Claude**.
 
+### Your phone
+The phone app is a web app, so there's nothing to download from an app store. Set it up once:
+1. On your computer, right-click the Wisp orb > **Phone**.
+2. On your phone, open the camera and **scan the QR code**. It opens Wisp's phone app in your browser. To use it away from home, turn on **Use away from home** first (it uses a secure Cloudflare link, no router setup).
+3. **Add it to your home screen** so it opens like a real app:
+   - **iPhone:** open the link in **Safari**, tap the **Share** button, then **Add to Home Screen**.
+   - **Android:** open the link in **Chrome**, tap the **menu (three dots)**, then **Install app** or **Add to Home screen**.
+4. Open Wisp from your home screen. Hold the mic button to talk, or type. You can also watch and control the computer's screen, use media keys, timers and routines.
+
+Wisp can also send notifications to any phone (install the free **ntfy** app, tap **+** and subscribe to the name shown in Wisp > Phone) and fully control an **Android** phone through Wireless debugging. iPhones don't allow other apps to control them.
 ### Uninstalling
 **Settings > System > Uninstall Wisp**. On Windows you can also use **Settings > Apps**. It asks whether to keep your settings and memory.
 

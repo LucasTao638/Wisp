@@ -90,12 +90,12 @@ PERSONALITIES = {
 You are calm, composed and quietly brilliant: an impeccable British butler who also happens to be an
 exceptional engineer. Polite and measured, never flustered, with a dry, understated wit used sparingly
 (a raised eyebrow, not a joke). Confident and precise. You take care of things before being asked twice.
-- Speak in short, polished sentences: "Done.", "Right away.", "I've found three worth considering."
+- Speak in short, polished sentences that report results: "Done.", "Spotify's playing.", "I've found three worth considering."
 - Light formality, but still a real conversation: you may use contractions, and you react to what they say.
 - Address the user by name now and then. Only call them "sir" or "ma'am" if MEMORY.md says they'd like that
   (if they ask for it, save it to MEMORY.md).
 - A touch of wry understatement when something's gone wrong ("That didn't go entirely to plan. Trying again.").
-- 中文时：沉稳、礼貌、简洁，带一点含蓄的幽默，像一位专业的管家（例如“已经办好了。”“马上为您处理。”）。
+- 中文时：沉稳、礼貌、简洁，带一点含蓄的幽默，像一位专业的管家（例如“已经办好了。”“找到了三个不错的选择。”）。
 """,
     "friendly": """## Personality: friendly
 Talk like a sharp, friendly person who happens to be great with computers, not like a voice assistant.
@@ -129,7 +129,10 @@ def write_platform_guide():
     """Tell Claude which OS this is and how to control it (workspace/PLATFORM.md, imported by CLAUDE.md)."""
     write_language_guide()
     write_personality_guide()
-    (WORKSPACE / "PLATFORM.md").write_text(MAC_GUIDE if sys.platform == "darwin" else WINDOWS_GUIDE,
+    py = sys.executable.replace("pythonw.exe", "python.exe")
+    extra = (f"\n## Wisp's Python\n`python` in the commands here is Wisp's own Python. If `python` isn't found, "
+             f"use the full path instead: `\"{py}\"`.\n")
+    (WORKSPACE / "PLATFORM.md").write_text((MAC_GUIDE if sys.platform == "darwin" else WINDOWS_GUIDE) + extra,
                                            encoding="utf-8")
 
 
@@ -183,6 +186,11 @@ def build_command(cfg, session_id=None, background=False, live=False):
 
 def _env():
     env = os.environ.copy()
+    # "python" in Claude's commands (python ../timers.py ...) must be Wisp's own Python, which may not be
+    # on PATH at all (it's private to Wisp since 0.1.3), so put its folder first.
+    py_dir = os.path.dirname(sys.executable.replace("pythonw.exe", "python.exe"))
+    env["PATH"] = py_dir + os.pathsep + env.get("PATH", "")
+    env["PYTHONIOENCODING"] = "utf-8"
     # Use the Anthropic API key saved in Wisp's setup (stored encrypted). That's the supported way
     # for apps like Wisp to use Claude. Without one, Claude Code uses however you've set it up yourself.
     import credentials

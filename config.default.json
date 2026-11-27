@@ -51,13 +51,10 @@
   "conversation_mode": true,
   "conversation_seconds": 8,
   "headphones_mode": false,
-  "thinking_ack_after": 2.0,
-  "thinking_acks": [
-    "One moment.",
-    "Right away.",
-    "On it.",
-    "Just a moment."
-  ],
+  "long_task_ack": true,
+  "quick_finish": true,
+  "phone_screen": true,
+  "long_task_ack_after": 6,
   "share_usage_stats": true,
   "setup_done": false,
   "follow_up_listening": true

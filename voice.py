@@ -60,14 +60,21 @@ class Transcriber:
         if language != "en" and model_name.endswith(".en"):  # ".en" models only understand English
             model_name = "small"
         self.model = WhisperModel(model_name, device="cpu", compute_type="int8")
+        self._lock = threading.Lock()   # the mic and the phone can both ask at once
 
     def transcribe(self, audio):
+        with self._lock:
+            return self._transcribe(audio)
+
+    def _transcribe(self, audio):
         if self.language == "zh":
             # The prompt nudges Whisper towards Simplified characters and punctuation.
             segments, _ = self.model.transcribe(audio, language="zh", vad_filter=True, beam_size=1,
+                                                without_timestamps=True, condition_on_previous_text=False,
                                                 initial_prompt="以下是普通话的句子，使用简体中文。")
             return to_simplified("".join(s.text.strip() for s in segments).strip())
-        segments, _ = self.model.transcribe(audio, language="en", vad_filter=True, beam_size=1)
+        segments, _ = self.model.transcribe(audio, language="en", vad_filter=True, beam_size=1,
+                                            without_timestamps=True, condition_on_previous_text=False)
         return " ".join(s.text.strip() for s in segments).strip()
 
 
@@ -173,6 +180,16 @@ _TRAILING_ZH = ("然后", "还有", "和", "跟", "就是", "那个", "这个", 
                 "如果", "的", "把", "给", "帮我", "再")
 
 
+def complete_sentence(text):
+    """A clearly finished request: ends with . ? ! (or 。？！) and has a few words."""
+    t = (text or "").strip()
+    if not t or sounds_unfinished(t, "zh" if any("\u4e00" <= ch <= "\u9fff" for ch in t) else "en"):
+        return False
+    if t.endswith(("?", "？", "!", "！", "。")):
+        return len(t) >= 4
+    return t.endswith(".") and len(t.split()) >= 3 and not t.endswith("...")
+
+
 def sounds_unfinished(text, lang="en"):
     """True if a sentence was clearly cut off mid-thought ("open Spotify and...")."""
     t = (text or "").strip()
@@ -205,6 +222,7 @@ class WakeListener:
     """
 
     CHUNK = 1280  # 80 ms at 16 kHz - what openWakeWord expects
+    EARLY_PAUSE = 0.7  # seconds of quiet before a quick "is that a complete sentence?" check
     MAX_SECONDS = 30
 
     def __init__(self, model_name, threshold, end_pause, is_paused, on_wake, on_command, on_nothing,
@@ -215,6 +233,7 @@ class WakeListener:
         self.on_command, self.on_nothing = on_command, on_nothing
         self.check_finished = check_finished
         self.can_barge_in, self.on_barge_in = can_barge_in, on_barge_in
+        self.quick_finish = True     # answer after a short pause when it's clearly a complete sentence
         self.min_speech = 0.0        # a follow-up needs at least this much talking (ignores coughs, clicks, TV)
         self.level = 0.0
         self.capturing = False
@@ -247,6 +266,7 @@ class WakeListener:
         self._recorded, self._heard, self._silent = [], False, 0.0
         self._speech = 0.0          # seconds that sounded like talking
         self._extensions = 0        # times we kept listening because the sentence wasn't finished
+        self._early_checked = False
         self._started, self._timeout = time.time(), timeout
 
     def _pause_needed(self):
@@ -323,6 +343,15 @@ class WakeListener:
                     self._silent += step / 2  # in between (breathing, a soft word): counts as half a pause
                 elapsed = time.time() - self._started
                 too_long = elapsed > self.MAX_SECONDS
+                # quick check after a short pause: if it's clearly a finished sentence, don't keep waiting
+                if (self.check_finished and self.quick_finish and self._heard and not self._early_checked
+                        and self._extensions == 0
+                        and self._speech >= 0.8 and self._silent >= self.EARLY_PAUSE):
+                    self._early_checked = True
+                    finished, text = self.check_finished(np.concatenate(self._recorded))
+                    if finished and complete_sentence(text):
+                        self._finish(np.concatenate(self._recorded), text)
+                        continue
                 paused = self._heard and self._silent > self._pause_needed()
                 gave_up = not self._heard and elapsed > self._timeout
                 if not (paused or too_long or gave_up):
@@ -388,9 +417,11 @@ class Speaker:
         self._jobs = queue.Queue()
         threading.Thread(target=self._loop, daemon=True).start()
 
-    def speak(self, text, on_done=None):
-        """Speak in the background. on_done() runs if it finishes without being stopped."""
+    def speak(self, text, on_done=None, on_start=None):
+        """Speak in the background. on_done() runs if it finishes without being stopped;
+        on_start() runs when the first sound plays."""
         self.stop()
+        self._on_start = on_start
         self._jobs.put((self._generation, text, on_done))
 
     def stop(self):
@@ -470,7 +501,13 @@ class Speaker:
                 merged[-1] += ("" if not p.isascii() else " ") + p
             else:
                 merged.append(p)
-        return merged or [text]
+        merged = merged or [text]
+        first = merged[0]
+        if len(first) > 90:   # a long first sentence: start speaking at its first comma instead
+            m = re.search(r"^(.{25,80}?[,;:\uff0c\uff1b])\s*(.+)$", first)
+            if m:
+                merged[0:1] = [m.group(1), m.group(2)]
+        return merged
 
     def _speak_edge(self, text, gen):
         try:
@@ -505,6 +542,11 @@ class Speaker:
                     print(f"(neural voice unavailable: {files[i]} - using the Windows voice)")
                     return False
                 return True
+            if i == 0 and getattr(self, "_on_start", None):
+                try:
+                    self._on_start()
+                except Exception:
+                    pass
             self._play(files[i], gen)
         return True
 

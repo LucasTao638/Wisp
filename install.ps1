@@ -45,7 +45,7 @@ Say "`n=== Installing Wisp ===`n"
 # ---------- choosing where Wisp goes ----------
 $RegKey = "HKCU:\Software\Wisp"
 $Personal = @("config.json", "secrets.bin", "telemetry.json", "state.json", "timers.json", "focus.json", "phone.json",
-              "routines.json", "feedback_outbox.json", "wisp.log", "jobs", "backups")
+              "routines.json", "feedback_outbox.json", "wisp.log", "jobs", "backups", "android.json", "bin")
 
 function Get-SavedDir {
     try { return (Get-ItemProperty $RegKey -Name InstallDir -ErrorAction Stop).InstallDir } catch { return $null }

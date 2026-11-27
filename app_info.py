@@ -5,6 +5,8 @@ VERSION = "0.2.0"
 
 # Where updates come from: "<github-username>/<repo-name>". Change this before your first release.
 GITHUB_REPO = "LucasTao638/Wisp"
+# The phone app away from home (GitHub Pages serves docs/index.html - a copy of remote_page.html)
+PHONE_APP_URL = "https://lucastao638.github.io/Wisp/"
 
 # Anonymous usage stats (PostHog). Paste your PostHog *project* API key here (it starts with "phc_").
 # It's safe to publish: it can only send events, not read them. Leave it as-is to send nothing.

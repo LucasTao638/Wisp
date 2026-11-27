@@ -9,6 +9,16 @@
 - New "Composed AI" voice style: a little deeper and slower, with a subtle synthetic edge and a sense of space (Settings > Voice > Voice style; "Natural" turns it off)
 - Choose Wisp's personality: "Composed butler" (calm, polite, dry wit) or "Friendly" (casual) - in setup and Settings > You
 - Dark title bars on Windows; fixed the Save button in Settings so "Restart now" works
+- Faster replies: a clearly finished sentence ("What's the weather tomorrow?") is answered after a short pause instead of the full one; Wisp starts speaking a long reply sooner; quicker speech-to-text. wisp.log now has a timing line for each spoken request
+- Much less "On it": Wisp only says something like "Give me a moment" when a task is clearly long, at most every few minutes and never mid-conversation; Claude no longer starts replies with filler
+- New phone app (holographic, installable on your home screen):
+  - Works away from home through a secure Cloudflare link - no Tailscale or router setup. Pair by scanning a QR code in Wisp > Phone
+  - Hold-to-talk on the phone; your computer does the speech-to-text
+  - Live view of the computer's screen: tap to click, hold for right-click, type, scroll and press keys
+  - Chat, media keys, timers, routines, background jobs
+- Wisp can reach your phone: notifications and links to any iPhone or Android (with the free ntfy app); full control of an Android phone over Wireless debugging (open apps, tap, type, read the screen)
+- Settings > Phone; the orb menu's "Connect phone" is now "Phone"
+- Fixed: on PCs with Wisp's private Python (0.1.3+), Claude's timer/reminder commands could fail to find Python
 
 ## 0.1.4
 - Anonymous usage stats and feedback are now switched on for real, so problems and ideas people send actually reach the developer (still optional: turn it off any time in Settings, see PRIVACY.md)

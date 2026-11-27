@@ -28,3 +28,5 @@ build/
 *.tmp
 .venv/
 .ruff_cache/
+android.json
+bin/

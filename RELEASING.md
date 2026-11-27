@@ -31,9 +31,9 @@ Easiest: **GitHub Desktop** (<https://desktop.github.com>)
 
 ### 5. Publish the first release
 1. On GitHub: your repo → **Releases** → **Draft a new release**.
-2. **Choose a tag** → type `v0.1.4` → *Create new tag on publish*.
-3. Title: `Wisp 0.1.4`. Description: paste the 0.1.4 section from `CHANGELOG.md`.
-4. **Publish release**. Within a minute or two, the **Actions** tab builds **`wisp-v0.1.4-windows.zip`** and **`wisp-v0.1.4-mac.zip`** and attaches both to the release automatically. (To build them on your own PC instead: `py build_release.py v0.1.4` → they appear in `build/`.)
+2. **Choose a tag** → type `v0.1.6` → *Create new tag on publish*.
+3. Title: `Wisp 0.1.6`. Description: paste the 0.1.6 section from `CHANGELOG.md`.
+4. **Publish release**. Within a minute or two, the **Actions** tab builds **`wisp-v0.1.6-windows.zip`** and **`wisp-v0.1.6-mac.zip`** and attaches both to the release automatically. (To build them on your own PC instead: `py build_release.py v0.1.6` → they appear in `build/`.)
 5. Test the one-line install on your own PC (or a friend's).
 
 ---
@@ -84,3 +84,10 @@ Everything here is something the person wrote and chose to send; treat emails as
 - **Don't** call it "Jarvis" in the name, logo or descriptions: that's Marvel's trademark. Offering "Hey Jarvis" as one of several wake phrases is fine.
 - **Security reports:** if someone reports a security problem, fix it before talking about it publicly.
 - **Privacy:** if you ever change what `telemetry.py` sends, update `PRIVACY.md` in the same release and mention it in the changelog.
+
+## The phone app (GitHub Pages) - once
+The phone app works away from home by being served from GitHub Pages:
+1. Repo **Settings > Pages > Build and deployment**: "Deploy from a branch", branch `main`, folder `/docs`, Save.
+2. After a minute, https://lucastao638.github.io/Wisp/ should show the app (it says "Connect to Wisp").
+Whenever `remote_page.html` changes, copy it to `docs/index.html` too.
+
